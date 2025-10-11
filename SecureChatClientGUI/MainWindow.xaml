@@ -32,10 +32,10 @@
             <ListBox x:Name="OnlineUsersListBox" ItemsSource="{Binding OnlineUsers}" Height="300" SelectionChanged="OnlineUsersListBox_SelectionChanged"/>
         </StackPanel>
 
-        <ListBox x:Name="ChatListBox" Grid.Row="1" Grid.Column="0" Margin="105,33,105,25"
+        <ListBox x:Name="ChatListBox" Grid.Row="1" Grid.Column="0" Margin="0,0,10,0"
                  ItemsSource="{Binding Messages}" 
                  Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="1"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" Grid.ColumnSpan="2" Grid.RowSpan="4">
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" Grid.RowSpan="2" Height="316" VerticalAlignment="Top">
 
             <ListBox.ItemContainerStyle>
                 <Style TargetType="{x:Type ListBoxItem}">

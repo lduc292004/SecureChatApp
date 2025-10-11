@@ -12,7 +12,7 @@ using Serilog;
 public class SecureChatServer
 {
     private const int Port = 5000;
-    private const string CertPath = "devcert.pfx";
+    private const string CertPath = "D:\\server.pfx";
     private const string CertPassword = "password123";
 
     // Key: SslStream, Value: Ten nguoi dung (string)
@@ -188,7 +188,20 @@ public class SecureChatServer
         X509Certificate2 serverCertificate;
         try
         {
-            serverCertificate = new X509Certificate2(CertPath, CertPassword);
+            if (!File.Exists(CertPath))
+            {
+                Log.Fatal("Khong tim thay file chung chi tai duong dan: {Path}", CertPath);
+                client.Close();
+                return;
+            }
+
+            serverCertificate = new X509Certificate2(
+                CertPath,
+                CertPassword,
+                X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet
+            );
+
+            Log.Information("Da tai chung chi thanh cong tu: {Path}", CertPath);
         }
         catch (Exception ex)
         {

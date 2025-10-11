@@ -1,1 +1,2 @@
 MỌI NGƯỜI PUSH CODE VÀO T6 HOẶC T7 TRỄ NHẤT LÀ CN ĐỂ MÌNH CHECK NHA.
+                   THANKS ALL

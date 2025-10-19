@@ -348,6 +348,3 @@ public class Program
             Log.CloseAndFlush();
         }
     }
-}
-
-#namcutedeptraihahaha

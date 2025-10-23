@@ -18,9 +18,19 @@ namespace SecureChatClientGUI
             // KHÔNG GÁN this.DataContext = this; ở đây. Sẽ gán sau khi khởi tạo _chatService.
             // Điều này giải quyết vấn đề expression-bodied properties bị lỗi.
 
+            // ********** NÂNG CẤP MỚI: Xử lý sự kiện đóng cửa sổ để ngắt kết nối **********
+            this.Closing += MainWindow_Closing;
+
             // Đăng ký sự kiện Loaded để ListBox có thể tự động cuộn khi Collection thay đổi
             // Cần đảm bảo ListBox trong XAML có Name="ChatListBox"
             ChatListBox.Loaded += ChatListBox_Loaded;
+        }
+
+        // ********** NÂNG CẤP MỚI: Phương thức xử lý sự kiện đóng cửa sổ **********
+        private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // Gọi Disconnect để đóng TcpClient và SslStream một cách sạch sẽ
+            _chatService?.Disconnect();
         }
 
         // Loại bỏ các Expression-bodied properties bị lỗi:
@@ -101,6 +111,7 @@ namespace SecureChatClientGUI
             {
                 string filePath = openFileDialog.FileName;
                 // Gửi lệnh gửi file qua service
+                // LƯU Ý: Sau này nên tách logic này sang hàm SendFileAsync riêng biệt trong ChatClientService
                 await _chatService.SendMessageAsync($"/sendfile \"{filePath}\"");
             }
         }

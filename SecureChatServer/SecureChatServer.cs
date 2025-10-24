@@ -1,351 +1,267 @@
-﻿using System.Net;
-using System.Net.Sockets;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Security.Authentication;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Serilog;
 
 public class SecureChatServer
 {
     private const int Port = 5000;
-    private const string CertPath = "D:\\server.pfx";
+    private const string CertPath = "securechat.pfx";
     private const string CertPassword = "password123";
+    private const string UploadDir = "ServerUploads";
 
-    // Key: SslStream, Value: Ten nguoi dung (string)
-    private static ConcurrentDictionary<SslStream, string> clientStreams = new ConcurrentDictionary<SslStream, string>();
-
-    // DANH SACH CAC MAU REGEX BI CAM (Phase 7)
-    private static readonly List<string> BlacklistPatterns = new List<string>
-    {
-        // URL/Link
-        @"(\bhttps?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})",
-        // Số điện thoại
-        @"\b(\+84|0)(3|5|7|8|9)\d{8}\b", 
-        // Lời mời nhập thông tin cá nhân/tài khoản
-        @"\b(nhap\s+mat\s+khau|doi\s+the\s+cao|gui\s+thong\s+tin\s+tai\s+khoan|dang\s+nhap\s+ngay)\b", 
-        // Lời mời gọi hành động đáng ngờ (Phishing)
-        @"\b(click\s+vao\s+link|truy\s+cap\s+gap|xac\s+minh\s+ngay)\b"
-    };
+    private static readonly ConcurrentDictionary<string, ClientConnection> _clients = new();
 
     public static async Task StartServer()
     {
-        TcpListener listener = new TcpListener(IPAddress.Any, Port);
-
-        try
-        {
-            listener.Start();
-            Log.Information("Server da khoi dong SECURE tai: {IpAddress}:{Port}", IPAddress.Any, Port);
-            Console.WriteLine("Dang cho ket noi...");
-
-            while (true)
-            {
-                TcpClient client = await listener.AcceptTcpClientAsync();
-                // Khởi chạy xử lý client trong một Task riêng biệt
-                _ = Task.Run(() => HandleClientAsync(client));
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Fatal(ex, "Loi Server: {Message}", ex.Message);
-        }
-        finally
-        {
-            listener.Stop();
-        }
-    }
-
-    private static async Task BroadcastMessageAsync(string senderName, string message)
-    {
-        bool isSystemMessage = senderName == "SERVER";
-
-        // Định dạng tin nhắn: [HH:mm] Tên: Nội dung (trừ tin nhắn SERVER)
-        string formattedMessage = isSystemMessage ? message : $"[{DateTime.Now.ToShortTimeString()}] {senderName}: {message}";
-
-        Log.Information("[BROADCAST] {Message}", formattedMessage);
-
-        // Đảm bảo tin nhắn kết thúc bằng \n
-        byte[] buffer = Encoding.UTF8.GetBytes(formattedMessage + "\n");
-
-        foreach (var clientEntry in clientStreams)
-        {
-            // Chỉ loại trừ người gửi nếu đó không phải tin nhắn SERVER
-            if (isSystemMessage || clientEntry.Value != senderName)
-            {
-                try
-                {
-                    // Ghi dữ liệu vào SslStream
-                    await clientEntry.Key.WriteAsync(buffer, 0, buffer.Length);
-                    await clientEntry.Key.FlushAsync(); // Đẩy dữ liệu ra ngay lập tức
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Loi khi gui broadcast toi client {ClientName}. Ngat ket noi.", clientEntry.Value);
-                    // Nếu lỗi, loại bỏ client khỏi danh sách
-                    clientStreams.TryRemove(clientEntry.Key, out _);
-                }
-            }
-        }
-    }
-
-    // ************ HÀM TIỆN ÍCH: ĐỌC DỮ LIỆU TIN CẬY THEO DÒNG ************
-    private static async Task<string?> ReadMessageLineAsync(SslStream stream, CancellationToken token = default)
-    {
-        var buffer = new byte[1];
-        var message = new StringBuilder();
-
-        while (true)
-        {
-            // Đọc từng byte một cho đến khi tìm thấy ký tự \n
-            int bytesRead;
-            try
-            {
-                bytesRead = await stream.ReadAsync(buffer, 0, 1, token);
-            }
-            catch (System.ObjectDisposedException)
-            {
-                return null; // Stream đã bị đóng
-            }
-            catch (System.IO.IOException)
-            {
-                return null; // Client đã ngắt kết nối
-            }
-
-
-            if (bytesRead == 0)
-            {
-                // Kết thúc Stream (Client đóng kết nối)
-                return message.Length > 0 ? message.ToString() : null;
-            }
-
-            char c = Encoding.UTF8.GetChars(buffer)[0];
-
-            if (c == '\n')
-            {
-                // Kết thúc tin nhắn
-                return message.ToString().TrimEnd('\r'); // Xóa ký tự xuống dòng của Windows (\r)
-            }
-
-            message.Append(c);
-        }
-    }
-
-    private static bool ContainsBlacklistedContent(string message)
-    {
-        string lowerCaseMessage = message.ToLowerInvariant();
-        foreach (var pattern in BlacklistPatterns)
-        {
-            if (Regex.IsMatch(lowerCaseMessage, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static async Task ReceiveFileAsync(SslStream stream, string fileName, long fileSize)
-    {
-        const string uploadDir = "TransferredFiles";
-        Directory.CreateDirectory(uploadDir);
-
-        string savePath = Path.Combine(uploadDir, fileName);
-
-        Log.Information("[FILE] Dang nhan file: {FileName} ({FileSize} bytes) -> {SavePath}", fileName, fileSize, savePath);
-
-        try
-        {
-            using (var fileStream = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true))
-            {
-                byte[] buffer = new byte[8192];
-                long bytesReceived = 0;
-                int bytesRead;
-
-                while (bytesReceived < fileSize && (bytesRead = await stream.ReadAsync(buffer, 0, (int)Math.Min(buffer.Length, fileSize - bytesReceived))) > 0)
-                {
-                    await fileStream.WriteAsync(buffer, 0, bytesRead);
-                    bytesReceived += bytesRead;
-
-                    if (bytesReceived % (1024 * 1024) == 0 || bytesReceived == fileSize)
-                    {
-                        Log.Debug("[FILE] Tien trinh: {Progress}%", bytesReceived * 100 / fileSize);
-                    }
-                }
-            }
-            Log.Information("[FILE] Hoan tat nhan file: {FileName}.", fileName);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[FILE ERROR] Loi khi nhan file {FileName}: {Message}", fileName, ex.Message);
-        }
-    }
-
-    // ************ PHƯƠNG THỨC XỬ LÝ CLIENT ĐÃ SỬA LỖI ĐỌC STREAM ************
-    private static async Task HandleClientAsync(TcpClient client)
-    {
-        X509Certificate2 serverCertificate;
-        try
-        {
-            if (!File.Exists(CertPath))
-            {
-                Log.Fatal("Khong tim thay file chung chi tai duong dan: {Path}", CertPath);
-                client.Close();
-                return;
-            }
-
-            serverCertificate = new X509Certificate2(
-                CertPath,
-                CertPassword,
-                X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet
-            );
-
-            Log.Information("Da tai chung chi thanh cong tu: {Path}", CertPath);
-        }
-        catch (Exception ex)
-        {
-            Log.Fatal(ex, "Loi tai chung chi: {Message}", ex.Message);
-            client.Close();
-            return;
-        }
-
-        NetworkStream netStream = client.GetStream();
-        SslStream sslStream = new SslStream(netStream, false);
-        string currentName = "Client_Unidentified";
-
-        try
-        {
-            // 1. AUTHENTICATION (Xác thực SSL/TLS)
-            await sslStream.AuthenticateAsServerAsync(serverCertificate, clientCertificateRequired: false,
-                                                     enabledSslProtocols: SslProtocols.Tls12 | SslProtocols.Tls13,
-                                                     checkCertificateRevocation: true);
-
-            Log.Information("Client: {RemoteEndPoint} da hoan tat bat tay SSL/TLS.", client.Client.RemoteEndPoint);
-
-            clientStreams.TryAdd(sslStream, currentName);
-
-            // 2. VÒNG LẶP ĐỌC DỮ LIỆU (SỬ DỤNG HÀM ĐỌC DÒNG TÙY CHỈNH)
-            string? data;
-            while ((data = await ReadMessageLineAsync(sslStream)) != null)
-            {
-                data = data.Trim();
-                if (string.IsNullOrEmpty(data)) continue;
-
-                // KIEM TRA LENH DOI TEN / CAI DAT TEN
-                if (data.StartsWith("[SET_NAME]:"))
-                {
-                    string newName = data.Substring("[SET_NAME]:".Length).Trim();
-                    if (string.IsNullOrWhiteSpace(newName)) continue;
-
-                    if (currentName != "Client_Unidentified")
-                    {
-                        await BroadcastMessageAsync("SERVER", $"{currentName} da doi ten thanh {newName}.");
-                    }
-                    else
-                    {
-                        await BroadcastMessageAsync("SERVER", $"{newName} da tham gia phong chat.");
-                    }
-
-                    // Cập nhật tên
-                    clientStreams.TryUpdate(sslStream, newName, currentName);
-                    currentName = newName;
-
-                    Log.Information("Client {RemoteEndPoint} da doi ten thanh {ClientName}", client.Client.RemoteEndPoint, currentName);
-                    continue;
-                }
-
-                // KIEM TRA GIAO THUC TRUYEN TEP
-                if (data.StartsWith("[FILE_START]:"))
-                {
-                    string metadata = data.Substring("[FILE_START]:".Length);
-                    string[] parts = metadata.Split('|');
-
-                    if (parts.Length == 2 && long.TryParse(parts[1], out long fileSize))
-                    {
-                        string fileName = parts[0];
-                        await BroadcastMessageAsync(currentName, $"bat dau gui file: {fileName} ({fileSize} bytes).");
-
-                        await ReceiveFileAsync(sslStream, fileName, fileSize);
-
-                        await BroadcastMessageAsync(currentName, $"da gui file: {fileName} thanh cong.");
-                    }
-                    else
-                    {
-                        Log.Error("[ERROR] Metadata file khong hop le: {Data}", data);
-                    }
-                }
-                else
-                {
-                    // TIN NHAN CHAT THONG THUONG - KIEM TRA NOI DUNG DOC HAI
-                    if (ContainsBlacklistedContent(data))
-                    {
-                        Log.Warning("BLOCKED: Tin nhan tu {ClientName} bi chan do chua noi dung bi cam. Noi dung: {Data}", currentName, data);
-
-                        string warning = "[SERVER WARNING]: Tin nhan cua ban bi chan vi co chua noi dung bi cam.\n";
-                        byte[] warningBuffer = Encoding.UTF8.GetBytes(warning);
-                        await sslStream.WriteAsync(warningBuffer, 0, warningBuffer.Length);
-                        await sslStream.FlushAsync();
-                    }
-                    else
-                    {
-                        await BroadcastMessageAsync(currentName, data);
-                    }
-                }
-            }
-        }
-        catch (AuthenticationException ex)
-        {
-            Log.Error(ex, "Loi Xac thuc SSL/TLS cho client {ClientName}: {Message}", currentName, ex.Message);
-        }
-        catch (IOException)
-        {
-            // Lỗi khi Client đóng kết nối hoặc mạng bị ngắt
-            Log.Information("Client ({RemoteEndPoint}) da ngat ket noi.", client.Client.RemoteEndPoint);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Loi xu ly Client ({RemoteEndPoint}): {Message}", client.Client.RemoteEndPoint, ex.Message);
-        }
-        finally
-        {
-            clientStreams.TryRemove(sslStream, out _);
-            if (currentName != "Client_Unidentified")
-            {
-                await BroadcastMessageAsync("SERVER", $"{currentName} da roi phong chat.");
-            }
-
-            sslStream?.Close();
-            client.Close();
-        }
-    }
-}
-
-// ************ ĐÃ SỬA: ĐỔI TÊN LỚP TỪ SecureChatClient thành Program ************
-public class Program
-{
-    public static async Task Main(string[] args)
-    {
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
-            .WriteTo.Console(
-                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
             .WriteTo.File("server.log", rollingInterval: RollingInterval.Day)
             .CreateLogger();
 
         try
         {
-            Log.Information("Server dang khoi dong...");
-            // Gọi phương thức StartServer từ lớp SecureChatServer
-            await SecureChatServer.StartServer();
+            if (!File.Exists(CertPath))
+            {
+                Console.WriteLine($"❌ Không tìm thấy chứng chỉ: {CertPath}");
+                return;
+            }
+
+            Directory.CreateDirectory(UploadDir);
+
+            var cert = new X509Certificate2(CertPath, CertPassword, X509KeyStorageFlags.MachineKeySet);
+            var listener = new TcpListener(IPAddress.Any, Port);
+            listener.Start();
+
+            Log.Information("🚀 Server đang chạy trên cổng {Port}", Port);
+
+            while (true)
+            {
+                TcpClient client = await listener.AcceptTcpClientAsync();
+                _ = HandleClientAsync(client, cert);
+            }
         }
         catch (Exception ex)
         {
-            Log.Fatal(ex, "Server da bi dung do loi khong mong muon.");
+            Log.Fatal(ex, "Lỗi khi khởi động server: {Message}", ex.Message);
         }
         finally
         {
             Log.CloseAndFlush();
         }
+    }
+
+    private static async Task HandleClientAsync(TcpClient client, X509Certificate2 cert)
+    {
+        string clientId = Guid.NewGuid().ToString();
+        string clientName = "Guest_" + clientId[..4];
+        SslStream? ssl = null;
+
+        try
+        {
+            ssl = new SslStream(client.GetStream(), false);
+            await ssl.AuthenticateAsServerAsync(cert, false, SslProtocols.Tls12 | SslProtocols.Tls13, false);
+
+            var conn = new ClientConnection(clientId, clientName, ssl, client);
+            _clients.TryAdd(clientId, conn);
+
+            Console.WriteLine($"✅ {clientName} đã kết nối.");
+            await BroadcastMessageAsync($"[INFO] {clientName} đã tham gia phòng chat.", conn);
+
+            await ReceiveLoopAsync(conn);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "❌ Lỗi client {Name}: {Message}", clientName, ex.Message);
+        }
+        finally
+        {
+            _clients.TryRemove(clientId, out _);
+            client.Close();
+            ssl?.Close();
+            await BroadcastMessageAsync($"[INFO] {clientName} đã ngắt kết nối.", null);
+        }
+    }
+
+    private static async Task ReceiveLoopAsync(ClientConnection clientConn)
+    {
+        var stream = clientConn.Stream!;
+        var reader = new StreamReader(stream, Encoding.UTF8);
+
+        while (true)
+        {
+            string? msg;
+            try
+            {
+                msg = await reader.ReadLineAsync();
+                if (msg == null) break;
+
+                if (msg.StartsWith("[SET_NAME]:"))
+                {
+                    await HandleSetName(clientConn, msg);
+                }
+                else if (msg.StartsWith("[IMG_START]:"))
+                {
+                    await HandleIncomingImage(clientConn, msg);
+                }
+                // ⭐ PHẦN ĐÃ SỬA: Bỏ kiểm tra [MSG]:. Mọi tin nhắn không phải lệnh đều được coi là tin nhắn chat.
+                else
+                {
+                    await BroadcastMessageAsync($"[{clientConn.Name}]: {msg}", clientConn);
+                }
+            }
+            catch (IOException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "❌ Lỗi khi nhận dữ liệu từ {Name}", clientConn.Name);
+                break;
+            }
+        }
+    }
+
+    private static async Task HandleIncomingImage(ClientConnection sender, string header)
+    {
+        // [IMG_START]:filename|size|mime
+        string[] parts = header.Substring(12).Split('|');
+        if (parts.Length < 3) return;
+
+        string fileName = parts[0];
+        long fileSize = long.Parse(parts[1]);
+        string mime = parts[2];
+        string savePath = Path.Combine(UploadDir, GetUniqueFileName(fileName));
+
+        Console.WriteLine($"🖼️ Đang nhận ảnh {fileName} ({fileSize} bytes) từ {sender.Name}");
+
+        try
+        {
+            byte[] buffer = new byte[8192];
+            long total = 0;
+
+            using (var fs = new FileStream(savePath, FileMode.Create, FileAccess.Write))
+            {
+                while (total < fileSize)
+                {
+                    int read = await sender.Stream!.ReadAsync(buffer, 0, (int)Math.Min(buffer.Length, fileSize - total));
+                    if (read <= 0) break;
+
+                    await fs.WriteAsync(buffer, 0, read);
+                    total += read;
+                }
+            }
+
+            Console.WriteLine($"✅ Đã nhận ảnh {fileName} từ {sender.Name}. Gửi lại cho các client khác...");
+
+            byte[] data = File.ReadAllBytes(savePath);
+            await BroadcastImageAsync(sender, fileName, data, mime);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "❌ Lỗi khi nhận ảnh từ {Name}", sender.Name);
+        }
+    }
+
+    private static async Task BroadcastImageAsync(ClientConnection sender, string fileName, byte[] data, string mime)
+    {
+        string header = $"[IMG_BROADCAST]:{fileName}|{data.Length}|{mime}\n";
+        byte[] headerBytes = Encoding.UTF8.GetBytes(header);
+
+        foreach (var client in _clients.Values)
+        {
+            if (client.Id == sender.Id) continue;
+
+            try
+            {
+                await client.Stream!.WriteAsync(headerBytes, 0, headerBytes.Length);
+                await client.Stream.WriteAsync(data, 0, data.Length);
+                await client.Stream.WriteAsync(Encoding.UTF8.GetBytes("\n[IMG_END]\n"));
+                await client.Stream.FlushAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "⚠️ Không gửi được ảnh cho {Name}", client.Name);
+            }
+        }
+    }
+
+    private static async Task HandleSetName(ClientConnection client, string msg)
+    {
+        string name = msg.Substring(11).Trim();
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            string old = client.Name;
+            client.Name = name;
+            await BroadcastMessageAsync($"[INFO] {old} đổi tên thành {name}.", null);
+        }
+    }
+
+    private static async Task BroadcastMessageAsync(string msg, ClientConnection? sender)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(msg + "\n");
+
+        foreach (var client in _clients.Values)
+        {
+            if (client.Id == sender?.Id) continue;
+
+            try
+            {
+                await client.Stream!.WriteAsync(bytes, 0, bytes.Length);
+                await client.Stream.FlushAsync();
+            }
+            catch
+            {
+                // bỏ qua client lỗi
+            }
+        }
+    }
+
+    private static string GetUniqueFileName(string name)
+    {
+        string baseName = Path.GetFileNameWithoutExtension(name);
+        string ext = Path.GetExtension(name);
+        string result = name;
+        int i = 1;
+
+        while (File.Exists(Path.Combine(UploadDir, result)))
+        {
+            result = $"{baseName}({i++}){ext}";
+        }
+
+        return result;
+    }
+}
+
+public class ClientConnection
+{
+    public string Id { get; }
+    public string Name { get; set; }
+    public SslStream? Stream { get; }
+    public TcpClient? Client { get; }
+
+    public ClientConnection(string id, string name, SslStream stream, TcpClient client)
+    {
+        Id = id;
+        Name = name;
+        Stream = stream;
+        Client = client;
+    }
+}
+
+public class Program
+{
+    public static async Task Main()
+    {
+        await SecureChatServer.StartServer();
     }
 }

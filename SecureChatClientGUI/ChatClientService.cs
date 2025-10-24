@@ -7,185 +7,283 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
-// Dòng này được xóa vì không dùng và gây lỗi CS1955:
-// using static System.Net.Mime.MediaTypeNames; 
+using System.Windows.Media.Imaging;
 
 namespace SecureChatClientGUI
 {
-    // Lớp ChatClientService
     public class ChatClientService
     {
         private const string ServerIP = "127.0.0.1";
         private const int Port = 5000;
-        private const string ServerName = "SecureChatServer";
+        // ⭐ SỬA LỖI SSL: Giữ "localhost" hoặc đổi sang giá trị khớp với CN của chứng chỉ Server.
+        private const string ServerName = "localhost";
 
         private TcpClient? _client;
         private SslStream? _sslStream;
-        private string _userName;
+        private string _userName = "Guest";
 
         public bool IsConnected { get; private set; }
-
         public event Action<string>? StatusChanged;
 
-        // ********** THUỘC TÍNH CHO BINDING: Dùng ChatMessage **********
-        public ObservableCollection<ChatMessage> Messages { get; } = new ObservableCollection<ChatMessage>();
-        public ObservableCollection<string> OnlineUsers { get; } = new ObservableCollection<string>();
+        public ObservableCollection<ChatMessage> Messages { get; } = new();
+        public ObservableCollection<string> OnlineUsers { get; } = new();
 
         public ChatClientService(string userName)
         {
             _userName = userName;
         }
 
-        // Hàm kiểm tra chứng chỉ (Giữ nguyên)
-        public static bool ValidateServerCertificate(
-                      object sender,
-                      X509Certificate certificate,
-                      X509Chain chain,
-                      SslPolicyErrors sslPolicyErrors)
-        {
-            return true;
-        }
+        private static bool ValidateServerCertificate(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors)
+            => true;
 
-        // ********** KẾT NỐI **********
-        public async Task ConnectAsync()
+        // -------------------- KẾT NỐI --------------------
+        public async Task<bool> ConnectAsync()
         {
-            // ... (Giữ nguyên)
             try
             {
-                StatusChanged?.Invoke("Dang ket noi...");
+                StatusChanged?.Invoke("🔗 Đang kết nối...");
                 _client = new TcpClient();
                 await _client.ConnectAsync(ServerIP, Port);
 
-                _sslStream = new SslStream(
-                    _client.GetStream(),
-                    false,
-                    new RemoteCertificateValidationCallback(ValidateServerCertificate)
-                );
-
+                _sslStream = new SslStream(_client.GetStream(), false, ValidateServerCertificate);
                 await _sslStream.AuthenticateAsClientAsync(ServerName);
                 IsConnected = true;
-                StatusChanged?.Invoke("Da ket noi SECURE thanh cong!");
 
-                // Gửi tên người dùng
-                byte[] nameBuffer = Encoding.UTF8.GetBytes($"[SET_NAME]:{_userName}\n");
-                await _sslStream.WriteAsync(nameBuffer, 0, nameBuffer.Length);
+                StatusChanged?.Invoke("✅ Đã kết nối bảo mật SSL thành công!");
 
-                // Bắt đầu vòng lặp lắng nghe
-                Task.Run(ReceiveLoop);
+                // ⭐ KHÔNG GỬI TÊN Ở ĐÂY. Logic gửi tên được chuyển về MainWindow sau khi kết nối.
+
+                _ = Task.Run(ReceiveLoop);
+                return true;
             }
             catch (Exception ex)
             {
-                StatusChanged?.Invoke($"Loi ket noi: {ex.Message}");
+                StatusChanged?.Invoke($"❌ Lỗi kết nối: {ex.Message}");
                 Disconnect();
+                return false;
             }
         }
 
-        // ********** GỬI TIN NHẮN **********
+        // -------------------- GỬI TIN NHẮN --------------------
         public async Task SendMessageAsync(string message)
         {
-            // ... (Giữ nguyên)
             if (!IsConnected || _sslStream == null) return;
+
+            // Xử lý lệnh SET_NAME (Chỉ sử dụng cho MainWindow.xaml.cs gọi sau khi kết nối)
+            if (message.StartsWith("[SET_NAME]:"))
+            {
+                // Cập nhật tên người dùng nội bộ sau khi gửi thành công (giả định)
+                _userName = message.Substring(11).Trim();
+
+                // Gửi lệnh SET_NAME, đảm bảo ký tự xuống dòng
+                byte[] data = Encoding.UTF8.GetBytes(message + "\n");
+                await _sslStream.WriteAsync(data, 0, data.Length);
+                await _sslStream.FlushAsync();
+                return;
+            }
+
+            // ⭐ Loại bỏ logic chặn /sendfile ở đây. MainWindow.xaml.cs phải gọi SendImageAsync trực tiếp.
+            if (message.StartsWith("/sendfile")) return;
 
             try
             {
-                // Thêm tin nhắn của chính mình vào list ngay lập tức (IsMine = True)
+                // Thêm tin nhắn của mình vào list hiển thị ngay lập tức
                 Messages.Add(new ChatMessage { Content = message, Sender = _userName, IsMine = true });
 
-                // Gửi tin nhắn
+                // ⭐ SỬA LỖI GIAO THỨC: Chỉ gửi nội dung + xuống dòng, không có tiền tố [MSG]:
                 byte[] data = Encoding.UTF8.GetBytes(message + "\n");
+
                 await _sslStream.WriteAsync(data, 0, data.Length);
+                await _sslStream.FlushAsync();
             }
             catch (Exception ex)
             {
-                StatusChanged?.Invoke($"Loi gui tin: {ex.Message}");
+                StatusChanged?.Invoke($"❌ Lỗi gửi tin: {ex.Message}");
                 Disconnect();
             }
         }
 
-        // ********** VÒNG LẶP LẮNG NGHE (SỬ DỤNG STREAMREADER ĐỂ ĐỌC DÒNG) **********
+        // -------------------- GỬI FILE ẢNH --------------------
+        public async Task SendImageAsync(string filePath)
+        {
+            if (!IsConnected || _sslStream == null || !File.Exists(filePath))
+            {
+                StatusChanged?.Invoke("⚠️ File không tồn tại hoặc chưa kết nối.");
+                return;
+            }
+
+            try
+            {
+                byte[] imageBytes = await File.ReadAllBytesAsync(filePath);
+                string fileName = Path.GetFileName(filePath);
+                string mimeType = "image/jpeg"; // Cần xác định MIME Type chính xác hơn trong thực tế.
+
+                // ⭐ SỬA LỖI HEADER: Sử dụng [IMG_START]: để khớp với Server
+                // Format: [IMG_START]:filename|size|mime\n
+                string header = $"[IMG_START]:{fileName}|{imageBytes.Length}|{mimeType}\n";
+
+                // Gửi header
+                byte[] headerBytes = Encoding.UTF8.GetBytes(header);
+                await _sslStream.WriteAsync(headerBytes, 0, headerBytes.Length);
+
+                // Gửi dữ liệu ảnh
+                await _sslStream.WriteAsync(imageBytes, 0, imageBytes.Length);
+
+                await _sslStream.FlushAsync();
+
+                // Hiển thị ảnh ngay bên người gửi
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Messages.Add(new ChatMessage
+                    {
+                        Sender = _userName,
+                        IsMine = true,
+                        Image = LoadImageFromBytes(imageBytes)
+                    });
+                });
+
+                StatusChanged?.Invoke($"📤 Đã gửi ảnh: {fileName} ({imageBytes.Length} bytes)");
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"❌ Lỗi gửi ảnh: {ex.Message}");
+            }
+        }
+
+        // -------------------- NHẬN DỮ LIỆU (Giữ nguyên logic phân tích tin nhắn đã sửa) --------------------
         private async Task ReceiveLoop()
         {
             if (_sslStream == null) return;
 
-            using (var reader = new StreamReader(_sslStream, Encoding.UTF8))
+            try
             {
-                try
+                var reader = new StreamReader(_sslStream, Encoding.UTF8, false, 1024, true);
+
+                while (IsConnected)
                 {
-                    string? rawMessage;
+                    string? receivedMessage = await reader.ReadLineAsync();
+                    if (string.IsNullOrEmpty(receivedMessage)) break;
 
-                    while (IsConnected && (rawMessage = await reader.ReadLineAsync()) != null)
+                    if (receivedMessage.StartsWith("[INFO]"))
                     {
-                        string message = rawMessage.Trim();
-
-                        if (string.IsNullOrEmpty(message)) continue;
-
-                        // ** PHÂN TÍCH TIN NHẮN TỪ SERVER **
-                        string sender = "Server";
-                        string content = message;
-
-                        if (message.StartsWith('['))
+                        // Xử lý tin nhắn INFO (Join/Leave/Rename)
+                        Application.Current.Dispatcher.Invoke(() =>
                         {
-                            int endBracket = message.IndexOf(']');
-                            if (endBracket > 0 && endBracket < message.Length - 1)
-                            {
-                                string part = message.Substring(endBracket + 1).TrimStart();
-
-                                int colon = part.IndexOf(':');
-                                if (colon > 0)
-                                {
-                                    // Trường hợp: "SenderName: Content"
-                                    sender = part.Substring(0, colon).Trim();
-                                    content = part.Substring(colon + 1).Trim();
-                                }
-                                else
-                                {
-                                    // Trường hợp: "[BROADCAST] Welcome!"
-                                    content = part;
-                                    sender = "Hệ thống";
-                                }
-                            }
-                        }
-
-                        // DO LỖI CS1955 NẰM Ở ĐÂY -> ĐÃ SỬA DỤNG Dispatcher.Invoke
-                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            // Chỉ thêm tin nhắn của người khác hoặc tin nhắn hệ thống
-                            // Loại bỏ tin nhắn của chính mình vì đã thêm trong SendMessageAsync
-                            if (!sender.Equals(_userName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                Messages.Add(new ChatMessage { Content = content, Sender = sender, IsMine = false });
-                            }
-                            // Thêm logic cập nhật OnlineUsers ở đây nếu Server gửi danh sách
+                            Messages.Add(new ChatMessage { Content = receivedMessage, Sender = "SERVER", IsMine = false });
                         });
                     }
-                }
-                catch (IOException)
-                {
-                    // Lỗi đọc/ghi, có thể do Server đóng kết nối
-                }
-                catch (Exception ex)
-                {
-                    StatusChanged?.Invoke($"Loi lang nghe: {ex.Message}");
+                    else if (receivedMessage.StartsWith("[IMG_BROADCAST]:"))
+                    {
+                        // Xử lý ảnh (Cần kiểm tra lại logic nhận ảnh để khớp với format Server)
+                        // Format Server: [IMG_BROADCAST]:filename|size|mime\n + [bytes] + \n[IMG_END]\n
+
+                        // Lấy thông tin header
+                        string info = receivedMessage.Substring(16);
+                        string[] parts = info.Split('|');
+
+                        if (parts.Length < 3 || !long.TryParse(parts[1], out long size)) continue;
+
+                        string fileName = parts[0];
+                        string mime = parts[2];
+
+                        byte[] buffer = new byte[size];
+                        long totalBytesRead = 0;
+
+                        // Đảm bảo Stream đang ở chế độ đọc byte
+                        // (StreamReader.ReadLineAsync() có thể đã đọc thừa)
+
+                        // Đây là phần phức tạp nhất. Cần đọc chính xác 'size' byte từ stream.
+                        while (totalBytesRead < size)
+                        {
+                            // Đọc từng khối (chunk)
+                            int n = await _sslStream.ReadAsync(buffer, (int)totalBytesRead, (int)Math.Min(buffer.Length - totalBytesRead, 8192));
+                            if (n <= 0) break;
+                            totalBytesRead += n;
+                        }
+
+                        // Đọc dấu kết thúc \n[IMG_END]\n sau khi nhận ảnh (để đảm bảo StreamReader tiếp tục đúng vị trí)
+                        if (totalBytesRead == size)
+                        {
+                            // Đọc [IMG_END] để dọn dẹp stream (giả định Server gửi đúng \n[IMG_END]\n)
+                            // Sử dụng StreamReader.ReadLineAsync() để đọc dòng kết thúc
+                            await reader.ReadLineAsync();
+
+                            BitmapImage img = LoadImageFromBytes(buffer);
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                Messages.Add(new ChatMessage
+                                {
+                                    Sender = "Người khác",
+                                    Image = img,
+                                    IsMine = false,
+                                    Content = $"🖼️ Đã nhận ảnh: {fileName}"
+                                });
+                            });
+                            StatusChanged?.Invoke($"📥 Nhận ảnh: {fileName} ({size} bytes)");
+                        }
+                    }
+                    else
+                    {
+                        // XỬ LÝ TIN NHẮN CHAT (Format: [Tên]: Nội dung)
+                        int endNameIndex = receivedMessage.IndexOf("]:");
+                        if (receivedMessage.StartsWith('[') && endNameIndex > 1)
+                        {
+                            string senderName = receivedMessage.Substring(1, endNameIndex - 1);
+                            string content = receivedMessage.Substring(endNameIndex + 2).Trim();
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                Messages.Add(new ChatMessage
+                                {
+                                    Sender = senderName,
+                                    Content = content,
+                                    IsMine = false
+                                });
+                            });
+                        }
+                        else
+                        {
+                            // Tin nhắn không rõ format, hiển thị dưới dạng thông báo
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                Messages.Add(new ChatMessage { Content = receivedMessage, Sender = "DEBUG", IsMine = false });
+                            });
+                        }
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"❌ Lỗi nhận dữ liệu: {ex.Message}");
+            }
+
             Disconnect();
         }
 
-        // ********** NGẮT KẾT NỐI **********
+        // -------------------- NGẮT KẾT NỐI và LOAD ẢNH (Giữ nguyên) --------------------
         public void Disconnect()
         {
-            // ... (Giữ nguyên)
             if (!IsConnected) return;
-
             IsConnected = false;
             try
             {
                 _sslStream?.Close();
                 _client?.Close();
             }
-            catch { /* Bo qua loi khi dong */ }
+            catch { }
+            StatusChanged?.Invoke("🔌 Đã ngắt kết nối.");
+        }
 
-            StatusChanged?.Invoke("Da ngat ket noi.");
+        private static BitmapImage LoadImageFromBytes(byte[] bytes)
+        {
+            using var ms = new MemoryStream(bytes);
+            BitmapImage image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = ms;
+            image.EndInit();
+            image.Freeze();
+            return image;
         }
     }
 }

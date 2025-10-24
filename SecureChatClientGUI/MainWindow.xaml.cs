@@ -15,57 +15,50 @@ namespace SecureChatClientGUI
         public MainWindow()
         {
             InitializeComponent();
-            // KHÔNG GÁN this.DataContext = this; ở đây. Sẽ gán sau khi khởi tạo _chatService.
-            // Điều này giải quyết vấn đề expression-bodied properties bị lỗi.
-
-            // ********** NÂNG CẤP MỚI: Xử lý sự kiện đóng cửa sổ để ngắt kết nối **********
             this.Closing += MainWindow_Closing;
-
-            // Đăng ký sự kiện Loaded để ListBox có thể tự động cuộn khi Collection thay đổi
-            // Cần đảm bảo ListBox trong XAML có Name="ChatListBox"
             ChatListBox.Loaded += ChatListBox_Loaded;
+
+            // Khởi tạo trạng thái điều khiển ban đầu
+            UpdateControlStates();
         }
 
-        // ********** NÂNG CẤP MỚI: Phương thức xử lý sự kiện đóng cửa sổ **********
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             // Gọi Disconnect để đóng TcpClient và SslStream một cách sạch sẽ
             _chatService?.Disconnect();
         }
 
-        // Loại bỏ các Expression-bodied properties bị lỗi:
-        // public ObservableCollection<string> Messages => _chatService?.Messages ?? new ObservableCollection<string>();
-        // public ObservableCollection<string> OnlineUsers => _chatService?.OnlineUsers ?? new ObservableCollection<string>();
-
-
         private async void ConnectButton_Click(object sender, RoutedEventArgs e)
         {
             string userName = UserNameTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(userName))
             {
-                MessageBox.Show("Vui long nhap ten cua ban.", "Loi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Vui lòng nhập tên của bạn.", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // Đảm bảo ChatClientService đã được định nghĩa đúng namespace
             _chatService = new ChatClientService(userName);
 
             // Đính kèm sự kiện cho các thông báo từ Service
-            _chatService.StatusChanged += (status) => Dispatcher.Invoke(() => StatusTextBlock.Text = $"Trang thai: {status}");
-
-            // LƯU Ý: Đã xóa dòng sau: _chatService.MessageReceived += (msg) => Dispatcher.Invoke(() => Messages.Add(msg));
-            // Vì service hiện tại tự thêm ChatMessage vào Collection.
+            _chatService.StatusChanged += (status) => Dispatcher.Invoke(() => StatusTextBlock.Text = $"Trạng thái: {status}");
 
             // Xóa các tin nhắn cũ và danh sách online users khi kết nối mới
             _chatService.Messages.Clear();
             _chatService.OnlineUsers.Clear();
 
-            // Cập nhật DataContext để ListBox nhận ObservableCollection mới
-            // DataContext trỏ tới Service, nên ListBox binding ItemsSource="{Binding Messages}" sẽ hoạt động.
+            // Cập nhật DataContext
             this.DataContext = _chatService;
 
-            await _chatService.ConnectAsync();
+            // Cố gắng kết nối
+            bool connected = await _chatService.ConnectAsync();
             UpdateControlStates(); // Cập nhật trạng thái nút
+
+            // ⭐ BƯỚC SỬA 1: GỬI TÊN LÊN SERVER NGAY SAU KHI KẾT NỐI THÀNH CÔNG
+            if (connected)
+            {
+                string setNameCommand = $"[SET_NAME]:{userName}";
+                await _chatService.SendMessageAsync(setNameCommand);
+            }
         }
 
         private void DisconnectButton_Click(object sender, RoutedEventArgs e)
@@ -104,15 +97,19 @@ namespace SecureChatClientGUI
             if (_chatService == null || !_chatService.IsConnected) return;
 
             OpenFileDialog openFileDialog = new OpenFileDialog();
-            // Đặt filter để người dùng dễ chọn file hơn
-            openFileDialog.Filter = "All files (*.*)|*.*";
+            // Đặt filter chỉ cho phép chọn file ảnh (khuyến nghị)
+            openFileDialog.Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|All files (*.*)|*.*";
 
             if (openFileDialog.ShowDialog() == true)
             {
                 string filePath = openFileDialog.FileName;
-                // Gửi lệnh gửi file qua service
-                // LƯU Ý: Sau này nên tách logic này sang hàm SendFileAsync riêng biệt trong ChatClientService
-                await _chatService.SendMessageAsync($"/sendfile \"{filePath}\"");
+
+                // ⭐ BƯỚC SỬA 2: GỌI TRỰC TIẾP SendImageAsync
+                // Loại bỏ việc gửi lệnh "/sendfile" qua SendMessageAsync
+                await _chatService.SendImageAsync(filePath);
+
+                // Cuộn xuống sau khi gửi
+                ScrollToBottom();
             }
         }
 
@@ -135,7 +132,7 @@ namespace SecureChatClientGUI
         {
             if (sender is ListBox listBox)
             {
-                // Khi một item mới được thêm vào collection, ta cuộn xuống
+                // Chỉ đăng ký sự kiện nếu _chatService đã tồn tại
                 if (_chatService != null)
                 {
                     _chatService.Messages.CollectionChanged += (s, args) =>
@@ -146,6 +143,8 @@ namespace SecureChatClientGUI
                         }
                     };
                 }
+                // Nếu ChatListBox.Loaded được gọi trước ConnectButton_Click, sự kiện sẽ được gán lại
+                // sau khi _chatService được khởi tạo và DataContext được thiết lập.
             }
         }
 
@@ -163,9 +162,13 @@ namespace SecureChatClientGUI
                 SendFileButton.IsEnabled = isConnected;
                 UserNameTextBox.IsEnabled = !isConnected;
 
-                if (!isConnected)
+                if (!isConnected && _chatService == null)
                 {
-                    StatusTextBlock.Text = "Trang thai: Da ngat ket noi";
+                    StatusTextBlock.Text = "Trạng thái: Chưa kết nối";
+                }
+                else if (!isConnected)
+                {
+                    StatusTextBlock.Text = "Trạng thái: Đã ngắt kết nối";
                 }
             });
         }

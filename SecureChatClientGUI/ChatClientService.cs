@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
-
+using System.Linq;
 namespace SecureChatClientGUI
 {
     public class ChatClientService
@@ -41,6 +41,11 @@ namespace SecureChatClientGUI
         {
             try
             {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Messages.Clear();
+                });
+
                 StatusChanged?.Invoke("🔗 Đang kết nối...");
                 _client = new TcpClient();
                 await _client.ConnectAsync(ServerIP, Port);
@@ -50,8 +55,6 @@ namespace SecureChatClientGUI
                 IsConnected = true;
 
                 StatusChanged?.Invoke("✅ Đã kết nối bảo mật SSL thành công!");
-
-                // ⭐ KHÔNG GỬI TÊN Ở ĐÂY. Logic gửi tên được chuyển về MainWindow sau khi kết nối.
 
                 _ = Task.Run(ReceiveLoop);
                 return true;
@@ -82,16 +85,28 @@ namespace SecureChatClientGUI
                 return;
             }
 
-            // ⭐ Loại bỏ logic chặn /sendfile ở đây. MainWindow.xaml.cs phải gọi SendImageAsync trực tiếp.
+            //  Loại bỏ logic chặn /sendfile ở đây. MainWindow.xaml.cs phải gọi SendImageAsync trực tiếp.
             if (message.StartsWith("/sendfile")) return;
 
             try
             {
-                // Thêm tin nhắn của mình vào list hiển thị ngay lập tức
-                Messages.Add(new ChatMessage { Content = message, Sender = _userName, IsMine = true });
+                var chatMessage = new ChatMessage
+                {
+                    MessageId = Guid.NewGuid().ToString("N"), // Tạo ID mới
+                    Content = message,
+                    Sender = _userName,
+                    IsMine = true
+                };
 
-                // ⭐ SỬA LỖI GIAO THỨC: Chỉ gửi nội dung + xuống dòng, không có tiền tố [MSG]:
-                byte[] data = Encoding.UTF8.GetBytes(message + "\n");
+                // Thêm tin nhắn của mình vào list hiển thị ngay lập tức
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Messages.Add(chatMessage);
+                });
+                string formattedMsg = $"[MSG]:{chatMessage.MessageId}|{_userName}|{message}\n";
+
+                byte[] data = Encoding.UTF8.GetBytes(formattedMsg);
 
                 await _sslStream.WriteAsync(data, 0, data.Length);
                 await _sslStream.FlushAsync();
@@ -102,6 +117,28 @@ namespace SecureChatClientGUI
                 Disconnect();
             }
         }
+
+        // PHƯƠNG THỨC MỚI: GỬI YÊU CẦU THU HỒI
+        public async Task SendRecallRequestAsync(string messageId)
+        {
+            if (!IsConnected || _sslStream == null) return;
+
+            try
+            {
+                // Định dạng lệnh yêu cầu thu hồi: [RECALL_REQ]:<MessageId>\n
+                string recallReq = $"[RECALL_REQ]:{messageId}\n";
+                byte[] data = Encoding.UTF8.GetBytes(recallReq);
+
+                await _sslStream.WriteAsync(data, 0, data.Length);
+                await _sslStream.FlushAsync();
+                StatusChanged?.Invoke($"📢 Đã gửi yêu cầu thu hồi tin nhắn ID: {messageId}");
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"❌ Lỗi gửi yêu cầu thu hồi: {ex.Message}");
+            }
+        }
+
 
         // -------------------- GỬI FILE ẢNH --------------------
         public async Task SendImageAsync(string filePath)
@@ -163,7 +200,22 @@ namespace SecureChatClientGUI
                 {
                     string? receivedMessage = await reader.ReadLineAsync();
                     if (string.IsNullOrEmpty(receivedMessage)) break;
-
+            
+                    if (receivedMessage.StartsWith("[RECALL]:"))
+                    {
+                        string messageId = receivedMessage.Substring("[RECALL]:".Length).Trim();
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            // Tìm tin nhắn theo MessageId và đánh dấu là đã thu hồi
+                            var messageToRecall = Messages.FirstOrDefault(m => m.MessageId == messageId);
+                            if (messageToRecall != null)
+                            {
+                                messageToRecall.IsRecalled = true; // Cập nhật cờ
+                                StatusChanged?.Invoke($" Tin nhắn ID {messageId} đã được thu hồi.");
+                            }
+                        });
+                        continue;
+                    }
                     if (receivedMessage.StartsWith("[INFO]"))
                     {
                         // Xử lý tin nhắn INFO (Join/Leave/Rename)

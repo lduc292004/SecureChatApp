@@ -177,5 +177,41 @@ namespace SecureChatClientGUI
         {
             // Thêm logic xử lý khi người dùng chọn một user trong danh sách
         }
+
+        private async void btnThuHoi_Click(object sender, RoutedEventArgs e)
+        {
+            if (_chatService == null || !_chatService.IsConnected)
+            {
+                MessageBox.Show("Chưa kết nối đến máy chủ.", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            // 1. Lấy tin nhắn đang được chọn từ ListBox
+            if (ChatListBox.SelectedItem is ChatMessage messageToRecall)
+            {
+                // 2. Kiểm tra an toàn: Phải là tin nhắn của mình và chưa bị thu hồi
+                if (!messageToRecall.IsMine)
+                {
+                    MessageBox.Show("Bạn chỉ có thể thu hồi tin nhắn của chính mình.", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                if (messageToRecall.IsRecalled)
+                {
+                    MessageBox.Show("Tin nhắn này đã bị thu hồi.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 3. Gọi hàm gửi yêu cầu thu hồi
+                await _chatService.SendRecallRequestAsync(messageToRecall.MessageId);
+
+                // (Tùy chọn) Bỏ chọn tin nhắn sau khi gửi yêu cầu
+                ChatListBox.SelectedItem = null;
+            }
+            else
+            {
+                // Trường hợp người dùng chưa chọn tin nhắn
+                MessageBox.Show("Vui lòng chọn một tin nhắn để thu hồi.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
     }
 }

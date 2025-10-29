@@ -72,7 +72,7 @@
                             Margin="0, 2, 0, 2">
                         <StackPanel>
                             <!-- Text -->
-                            <TextBlock Text="{Binding Content, TargetNullValue=''}"
+                            <TextBlock Text="{Binding DisplayContent, TargetNullValue=''}"
                                        TextWrapping="Wrap"
                                        Foreground="Black"
                                        FontSize="14"
@@ -115,5 +115,6 @@
             <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0"/>
             <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="Gray"/>
         </StackPanel>
+        <Button x:Name="btnThuHoi" Content="Thu Hoi" HorizontalAlignment="Left" Margin="369,-3,0,0" Click="btnThuHoi_Click" RenderTransformOrigin="-0.088,3.508" Width="46" Height="28" VerticalAlignment="Top"/>
     </Grid>
 </Window>

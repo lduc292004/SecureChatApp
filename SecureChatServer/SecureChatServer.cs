@@ -20,6 +20,8 @@ public class SecureChatServer
 
     private static readonly ConcurrentDictionary<string, ClientConnection> _clients = new();
 
+    //Them luu tru tin nhhat
+    private static readonly ConcurrentDictionary<string, ChatMessageRecord> _messageHistory = new();
     public static async Task StartServer()
     {
         Log.Logger = new LoggerConfiguration()
@@ -112,6 +114,17 @@ public class SecureChatServer
                 else if (msg.StartsWith("[IMG_START]:"))
                 {
                     await HandleIncomingImage(clientConn, msg);
+                
+                }
+                //  Xử lý yêu cầu thu hoi
+                else if (msg.StartsWith("[RECALL_REQ]:"))
+                {
+                    await HandleRecallRequestAsync(clientConn, msg);
+                }
+                //   Xử lý tin nhắn chat có MessageID (Client Console gửi)
+                else if (msg.StartsWith("[MSG]:"))
+                {
+                    await HandleChatMessageAsync(clientConn, msg);
                 }
                 // ⭐ PHẦN ĐÃ SỬA: Bỏ kiểm tra [MSG]:. Mọi tin nhắn không phải lệnh đều được coi là tin nhắn chat.
                 else
@@ -130,7 +143,76 @@ public class SecureChatServer
             }
         }
     }
+    private static async Task HandleChatMessageAsync(ClientConnection sender, string message)
+    {
+        // Định dạng Client gửi: [MSG]:<MessageId>|<Sender>|<Content>
+        try
+        {
+            string data = message.Substring("[MSG]:".Length);
+            var parts = data.Split(new[] { '|' }, 3);
 
+            if (parts.Length == 3)
+            {
+                string msgId = parts[0];
+                string senderName = parts[1];
+                string content = parts[2];
+
+                // 1. LƯU TRỮ tin nhắn
+                var record = new ChatMessageRecord
+                {
+                    MessageId = msgId,
+                    SenderId = sender.Id, // Lưu ID để xác thực thu hồi
+                    SenderName = sender.Name,
+                    Content = content
+                };
+                _messageHistory.TryAdd(msgId, record);
+
+                // 2. BROADCAST lại cho tất cả (format đơn giản: [Sender]: Content)
+                string broadcastMsg = $"[{sender.Name}]: {content}";
+                await BroadcastMessageAsync(broadcastMsg, sender); // Gửi cho tất cả (bao gồm người gửi)
+
+                Console.WriteLine($"💬 Nhận tin: {sender.Name} (ID: {msgId}): {content}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Lỗi khi xử lý tin nhắn chat từ {Name}", sender.Name);
+        }
+    }
+    // ⭐ HÀM MỚI: Xử lý Yêu cầu Thu hồi
+    private static async Task HandleRecallRequestAsync(ClientConnection requester, string message)
+    {
+        // Định dạng Client gửi: [RECALL_REQ]:<MessageId>
+        string msgIdToRecall = message.Substring("[RECALL_REQ]:".Length).Trim();
+
+        if (string.IsNullOrWhiteSpace(msgIdToRecall)) return;
+
+        // 1. TÌM và KIỂM TRA quyền thu hồi
+        if (_messageHistory.TryGetValue(msgIdToRecall, out var record))
+        {
+            // Chỉ người gửi gốc mới có quyền thu hồi
+            if (record.SenderId == requester.Id)
+            {
+                // 2. XÓA khỏi lịch sử Server
+                if (_messageHistory.TryRemove(msgIdToRecall, out _))
+                {
+                    // 3. BROADCAST lệnh thu hồi cho tất cả Clients
+                    string recallCommand = $"[RECALL]:{msgIdToRecall}";
+                    await BroadcastMessageAsync(recallCommand, null); // Gửi cho TẤT CẢ clients
+
+                    Console.WriteLine($"✅ Thu hồi thành công. MessageId: {msgIdToRecall} (Người gửi: {requester.Name})");
+                }
+            }
+            else
+            {
+                Log.Warning("⚠️ {Name} cố gắng thu hồi tin nhắn của người khác (ID: {MsgId})", requester.Name, msgIdToRecall);
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[WARN] Yêu cầu thu hồi MessageId không tồn tại: {msgIdToRecall}");
+        }
+    }
     private static async Task HandleIncomingImage(ClientConnection sender, string header)
     {
         // [IMG_START]:filename|size|mime
@@ -208,10 +290,20 @@ public class SecureChatServer
 
     private static async Task BroadcastMessageAsync(string msg, ClientConnection? sender)
     {
-        byte[] bytes = Encoding.UTF8.GetBytes(msg + "\n");
+        // Kiểm tra xem tin nhắn/lệnh đã kết thúc bằng ký tự xuống dòng chưa.
+        // Nếu tin nhắn đã là một lệnh (ví dụ: [RECALL]:id), ta không thêm \n
+        // Nếu là tin nhắn chat thông thường, ta đảm bảo có \n để Client Reader kết thúc.
+        string finalMsg = msg;
+        if (!msg.EndsWith('\n'))
+        {
+            finalMsg += "\n";
+        }
+
+        byte[] bytes = Encoding.UTF8.GetBytes(finalMsg);
 
         foreach (var client in _clients.Values)
         {
+            // Bỏ qua người gửi (trừ khi sender là null, tức là broadcast cho tất cả)
             if (client.Id == sender?.Id) continue;
 
             try
@@ -221,7 +313,7 @@ public class SecureChatServer
             }
             catch
             {
-                // bỏ qua client lỗi
+                // Bỏ qua client bị lỗi (có thể đã ngắt kết nối)
             }
         }
     }
@@ -240,6 +332,15 @@ public class SecureChatServer
 
         return result;
     }
+}
+// ⭐THÊM: Class lưu trữ chi tiết tin nhắn trên Server
+public class ChatMessageRecord
+{
+    public string MessageId { get; set; } = Guid.NewGuid().ToString();
+    public string SenderId { get; set; } // ID duy nhất của người gửi
+    public string SenderName { get; set; }
+    public string Content { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.Now;
 }
 
 public class ClientConnection

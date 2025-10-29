@@ -19,6 +19,7 @@ public class SecureChatClient
     private const string NameCommandPrefix = "/name ";
     private const string FileCommandPrefix = "/sendfile ";
     private const string DownloadCommandPrefix = "/download ";
+    private const string RecallCommandPrefix = "/recall "; //lenh thu hoi
     private const string DownloadDir = "Downloads";
 
     private static SslStream? _sslStream;
@@ -203,6 +204,13 @@ public class SecureChatClient
                     _ = Task.Run(() => ReceiveAndSaveFileAsync(_sslStream, message));
                     continue;
                 }
+                // ⭐ BỔ SUNG: Xử lý lệnh Thu Hồi từ Server
+                else if (message.StartsWith("[RECALL]:"))
+                {
+                    string messageId = message.Substring("[RECALL]:".Length).Trim();
+                    Console.WriteLine($"\n[INFO] Server thông báo: Tin nhắn ID {messageId} đã bị thu hồi.");
+                    continue;
+                }
                 Console.WriteLine(message);
             }
         }
@@ -242,9 +250,28 @@ public class SecureChatClient
                 else
                     Console.WriteLine($"[LỖI] Không tìm thấy file: {path}");
             }
+            // xu ly khi nhan lenh thu hoi tin nhan 
+            else if (input.StartsWith(RecallCommandPrefix))
+            {
+                string messageId = input.Substring(RecallCommandPrefix.Length).Trim();
+                if (!string.IsNullOrWhiteSpace(messageId))
+                {
+                    // Gửi lệnh yêu cầu thu hồi lên Server: [RECALL_REQ]:<MessageId>
+                    string recallReq = $"[RECALL_REQ]:{messageId}\n";
+                    await _sslStream.WriteAsync(Encoding.UTF8.GetBytes(recallReq));
+                    await _sslStream.FlushAsync();
+                    Console.WriteLine($"[INFO] Đã gửi yêu cầu thu hồi tin nhắn ID: {messageId}");
+                }
+                else
+                {
+                    Console.WriteLine("[LỖI] Vui lòng cung cấp MessageId để thu hồi. Ví dụ: /recall <MessageId>");
+                }
+            }
             else
             {
-                await _sslStream.WriteAsync(Encoding.UTF8.GetBytes(input + "\n"));
+                string tempId = Guid.NewGuid().ToString("N");
+                string formattedMsg = $"[MSG]:{tempId}|ConsoleUser|{input}\n"; // Cần Server xử lý lệnh [MSG]:
+                await _sslStream.WriteAsync(Encoding.UTF8.GetBytes(formattedMsg));
                 await _sslStream.FlushAsync();
             }
         }

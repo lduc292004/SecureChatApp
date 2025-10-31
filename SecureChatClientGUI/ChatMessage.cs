@@ -1,20 +1,58 @@
 ﻿// File: ChatMessage.cs
 using System;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Windows.Media.Imaging;
-using System.ComponentModel; 
+
 namespace SecureChatClientGUI
 {
+    // BẮT BUỘC phải triển khai INotifyPropertyChanged
     public class ChatMessage : INotifyPropertyChanged
     {
-        private bool _isRecalled = false;
         public event PropertyChangedEventHandler? PropertyChanged;
-        protected virtual void OnPropertyChanged(string propertyName)
+
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
-        //Dinh dnah cho tin nhan
-        public string MessageId { get; set; } = Guid.NewGuid().ToString();
-        //Dung de an noi dung va hien thi thong bao tin nhan da bi thu hoi
+
+        // --- Các thuộc tính cần thiết cho Chat Client Service ---
+
+        public string MessageId { get; set; } = Guid.NewGuid().ToString("N");
+        public string Sender { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public bool IsMine { get; set; }
+
+        private string? _content;
+        public string? Content
+        {
+            get => _content;
+            set
+            {
+                if (_content != value)
+                {
+                    _content = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayContent)); // Cần thông báo khi Content thay đổi
+                }
+            }
+        }
+
+        private BitmapImage? _image;
+        public BitmapImage? Image
+        {
+            get => _image;
+            set
+            {
+                if (_image != value)
+                {
+                    _image = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private bool _isRecalled;
         public bool IsRecalled
         {
             get => _isRecalled;
@@ -23,39 +61,24 @@ namespace SecureChatClientGUI
                 if (_isRecalled != value)
                 {
                     _isRecalled = value;
-                    OnPropertyChanged(nameof(IsRecalled));
-                    
-                    OnPropertyChanged(nameof(DisplayContent));
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayContent)); // Cần thông báo khi thu hồi
                 }
             }
         }
-        public string? DisplayContent
+
+        // Thuộc tính hiển thị cho XAML: Hiển thị nội dung hoặc thông báo thu hồi
+        public string DisplayContent
         {
             get
             {
                 if (IsRecalled)
                 {
+                    // LƯU Ý: Đây là nội dung hiển thị cho cả tin nhắn đi và đến
                     return "Tin nhắn đã bị thu hồi";
                 }
-                return Content;
+                return Content ?? string.Empty;
             }
         }
-        // Nội dung tin nhắn văn bản (nếu có)
-        public string? Content { get; set; }
-
-        // Thông tin người gửi
-        public string? Sender { get; set; }
-
-        // Xác định tin nhắn này có phải của chính mình hay không (để căn chỉnh UI)
-        public bool IsMine { get; set; }
-
-        // Hình ảnh đính kèm (nếu là tin nhắn hình)
-        public BitmapImage? Image { get; set; }
-
-        // Kiểm tra có hình hay không (tiện cho Binding)
-        public bool HasImage => Image != null;
-
-        // Ngày giờ gửi tin (nếu cần)
-        public DateTime Timestamp { get; set; } = DateTime.Now;
     }
 }

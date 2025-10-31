@@ -7,16 +7,91 @@
         mc:Ignorable="d"
         Title="Secure Chat Client" Height="500" Width="850">
 
-    <!-- 🔧 KHAI BÁO CONVERTER Ở ĐÂY -->
     <Window.Resources>
+
         <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+        <DataTemplate x:Key="MyMessageTemplate">
+            <Grid HorizontalAlignment="Right" Margin="5, 2, 5, 2">
+                <Border Background="#1E90FF" 
+                        CornerRadius="14" 
+                        Padding="10" 
+                        MaxWidth="400"
+                        Margin="40, 0, 0, 0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Content, TargetNullValue=''}"
+                                   Foreground="White"
+                                   TextWrapping="Wrap"
+                                   FontSize="14"
+                                   Visibility="{Binding Content, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                        <Image Source="{Binding Image}"
+                               MaxWidth="250"
+                               Margin="0,5,0,0"
+                               Stretch="Uniform"
+                               Visibility="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                        <TextBlock Text="{Binding DisplayContent}" 
+                                   FontStyle="Italic" 
+                                   Foreground="LightGray"
+                                   Visibility="{Binding IsRecalled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="OtherMessageTemplate">
+            <Grid HorizontalAlignment="Left" Margin="5, 2, 5, 2">
+
+                <Border Background="#EAEAEA" 
+                        CornerRadius="14" 
+                        Padding="10" 
+                        MaxWidth="400"
+                        Margin="0, 0, 40, 0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Sender, StringFormat='\{0\}:'}"
+                                   FontWeight="Bold"
+                                   Foreground="#444444"
+                                   Margin="0,0,0,3"/>
+
+                        <TextBlock Text="{Binding Content, TargetNullValue=''}"
+                                   Foreground="Black"
+                                   TextWrapping="Wrap"
+                                   FontSize="14"
+                                   Visibility="{Binding Content, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                        <Image Source="{Binding Image}"
+                               MaxWidth="250"
+                               Margin="0,5,0,0"
+                               Stretch="Uniform"
+                               Visibility="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                        <TextBlock Text="{Binding DisplayContent}" 
+                                   FontStyle="Italic" 
+                                   Foreground="#666666"
+                                   Visibility="{Binding IsRecalled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <local:ChatTemplateSelector x:Key="ChatTemplateSelector"
+                                     MyMessageTemplate="{StaticResource MyMessageTemplate}"
+                                     OtherMessageTemplate="{StaticResource OtherMessageTemplate}"/>
+
     </Window.Resources>
 
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="83*"/>
-            <RowDefinition Height="80*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -25,7 +100,6 @@
             <ColumnDefinition Width="200"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Thanh kết nối -->
         <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,10">
             <TextBlock Text="Tên của bạn:" VerticalAlignment="Center" Margin="0,0,5,0"/>
             <TextBox x:Name="UserNameTextBox" Width="150" Text="Guest" Margin="0,0,10,0"/>
@@ -33,88 +107,62 @@
             <Button x:Name="DisconnectButton" Content="Ngắt kết nối" Click="DisconnectButton_Click" IsEnabled="False"/>
         </StackPanel>
 
-        <!-- Danh sách người dùng -->
-        <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="3">
+        <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="4">
             <TextBlock Text="Người dùng trực tuyến:" FontWeight="Bold" Margin="0,0,0,5"/>
-            <ListBox x:Name="OnlineUsersListBox" ItemsSource="{Binding OnlineUsers}" Height="300"/>
+            <ListBox x:Name="OnlineUsersListBox" 
+                     ItemsSource="{Binding OnlineUsers}" 
+                     Height="380"
+                     SelectionChanged="OnlineUsersListBox_SelectionChanged"/>
         </StackPanel>
 
-        <!-- Khung chat -->
         <ListBox x:Name="ChatListBox"
                  Grid.Row="1"
                  Grid.Column="0"
-                 Grid.RowSpan="2"
                  Margin="0,0,10,0"
                  ItemsSource="{Binding Messages}"
+                 ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
                  Background="#F5F5F5"
                  BorderBrush="#CCCCCC"
                  BorderThickness="1"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 VerticalAlignment="Top">
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
 
             <ListBox.ItemContainerStyle>
                 <Style TargetType="{x:Type ListBoxItem}">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                    <Setter Property="Padding" Value="4"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                <ContentPresenter/>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </ListBox.ItemContainerStyle>
-
-            <!-- Template tin nhắn -->
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <Border x:Name="MessageBubble"
-                            MaxWidth="420"
-                            Padding="10"
-                            CornerRadius="14"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Top"
-                            Background="#FFFFFF"
-                            Margin="0, 2, 0, 2">
-                        <StackPanel>
-                            <!-- Text -->
-                            <TextBlock Text="{Binding DisplayContent, TargetNullValue=''}"
-                                       TextWrapping="Wrap"
-                                       Foreground="Black"
-                                       FontSize="14"
-                                       Visibility="{Binding Content, Converter={StaticResource NullToVisibilityConverter}}"/>
-
-                            <!-- Ảnh -->
-                            <Image Source="{Binding Image}"
-                                   MaxWidth="250"
-                                   Margin="0,5,0,0"
-                                   Stretch="Uniform"
-                                   Visibility="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Canh chỉnh bong bóng chat -->
-                    <DataTemplate.Triggers>
-                        <DataTrigger Binding="{Binding IsMine}" Value="True">
-                            <Setter TargetName="MessageBubble" Property="HorizontalAlignment" Value="Right"/>
-                            <Setter TargetName="MessageBubble" Property="Background" Value="#DCF8C6"/>
-                            <Setter TargetName="MessageBubble" Property="Margin" Value="40,2,0,2"/>
-                            <Setter TargetName="MessageBubble" Property="FlowDirection" Value="RightToLeft"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding IsMine}" Value="False">
-                            <Setter TargetName="MessageBubble" Property="HorizontalAlignment" Value="Left"/>
-                            <Setter TargetName="MessageBubble" Property="Background" Value="#FFFFFF"/>
-                            <Setter TargetName="MessageBubble" Property="Margin" Value="0,2,40,2"/>
-                            <Setter TargetName="MessageBubble" Property="FlowDirection" Value="LeftToRight"/>
-                        </DataTrigger>
-                    </DataTemplate.Triggers>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
         </ListBox>
 
-        <!-- Ô nhập -->
-        <TextBox x:Name="MessageTextBox" Grid.Row="3" Grid.Column="0" Margin="0,10,10,0" KeyDown="MessageTextBox_KeyDown"/>
+        <Grid Grid.Row="2" Grid.Column="0" Height="10"/>
 
-        <!-- Nút gửi -->
-        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,10,0,0">
-            <Button x:Name="SendButton" Content="Gửi tin nhắn" Click="SendButton_Click" Width="100" IsEnabled="False"/>
-            <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0"/>
-            <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="Gray"/>
-        </StackPanel>
-        <Button x:Name="btnThuHoi" Content="Thu Hoi" HorizontalAlignment="Left" Margin="369,-3,0,0" Click="btnThuHoi_Click" RenderTransformOrigin="-0.088,3.508" Width="46" Height="28" VerticalAlignment="Top"/>
+        <TextBox x:Name="MessageTextBox" 
+                 Grid.Row="3" 
+                 Grid.Column="0" 
+                 Margin="0,0,10,0" 
+                 KeyDown="MessageTextBox_KeyDown"/>
+
+        <Grid Grid.Row="4" Grid.Column="0" Margin="0,10,10,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="SendButton" Content="Gửi tin nhắn" Click="SendButton_Click" Width="100" IsEnabled="False" Grid.Column="0"/>
+            <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0" Grid.Column="1"/>
+            <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="Gray" Grid.Column="2"/>
+            <Button x:Name="btnThuHoi" Content="Thu Hồi" Click="btnThuHoi_Click" Width="80" Grid.Column="3"/>
+        </Grid>
     </Grid>
 </Window>

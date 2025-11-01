@@ -169,18 +169,32 @@ namespace SecureChatClientGUI
             // Thêm logic xử lý khi người dùng chọn một user trong danh sách
         }
 
-        private async void btnThuHoi_Click(object sender, RoutedEventArgs e)
+        private async void RecallMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (!_chatService.IsConnected)
             {
                 MessageBox.Show("Chưa kết nối đến máy chủ.", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            if (ChatListBox.SelectedItem is ChatMessage messageToRecall)
+
+            // Lấy messageId từ MenuItem.Tag (đã được setup trong XAML)
+            if (sender is MenuItem menuItem && menuItem.Tag is string messageId)
             {
-                if (!messageToRecall.IsMine)
+                // Tìm đối tượng ChatMessage tương ứng trong Messages
+                var messageToRecall = _chatService.Messages.FirstOrDefault(m => m.MessageId == messageId);
+
+                if (messageToRecall == null || !messageToRecall.IsMine)
                 {
                     MessageBox.Show("Bạn chỉ có thể thu hồi tin nhắn của chính mình.", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // ⭐ LOGIC KIỂM TRA THỜI GIAN THU HỒI (Giống Zalo/Messenger)
+                // Cho phép thu hồi trong vòng 10 phút (600 giây)
+                TimeSpan timeElapsed = DateTime.Now - messageToRecall.Timestamp;
+                if (timeElapsed.TotalSeconds > 600) // 600 giây = 10 phút
+                {
+                    MessageBox.Show("Đã quá thời gian cho phép thu hồi (10 phút).", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -190,13 +204,10 @@ namespace SecureChatClientGUI
                     return;
                 }
 
+                // Gửi yêu cầu thu hồi
                 await _chatService.SendRecallRequestAsync(messageToRecall.MessageId);
-                ChatListBox.SelectedItem = null;
-            }
-            else
-            {
-                MessageBox.Show("Vui lòng chọn một tin nhắn để thu hồi.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
+
     }
 }

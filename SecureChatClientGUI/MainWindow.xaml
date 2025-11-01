@@ -20,25 +20,62 @@
                         Padding="10" 
                         MaxWidth="400"
                         Margin="40, 0, 0, 0">
+
+                    <Border.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Thu hồi" 
+                                      Click="RecallMenuItem_Click" 
+                                      Tag="{Binding MessageId}">
+                                <MenuItem.Style>
+                                    <Style TargetType="{x:Type MenuItem}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsMine}" Value="True"/>
+                                                    <Condition Binding="{Binding IsRecalled}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </MenuItem.Style>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Border.ContextMenu>
                     <StackPanel>
-                        <TextBlock Text="{Binding Content, TargetNullValue=''}"
+
+                        <TextBlock Text="{Binding DisplayContent}"
                                    Foreground="White"
                                    TextWrapping="Wrap"
-                                   FontSize="14"
-                                   Visibility="{Binding Content, Converter={StaticResource NullToVisibilityConverter}}"/>
-
+                                   FontSize="14">
+                            <TextBlock.Style>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="FontStyle" Value="Italic"/>
+                                            <Setter Property="Foreground" Value="LightGray"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                         <Image Source="{Binding Image}"
                                MaxWidth="250"
                                Margin="0,5,0,0"
-                               Stretch="Uniform"
-                               Visibility="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
-
-                        <TextBlock Text="{Binding DisplayContent}" 
-                                   FontStyle="Italic" 
-                                   Foreground="LightGray"
-                                   Visibility="{Binding IsRecalled, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,5,0,0"/>
+                               Stretch="Uniform">
+                            <Image.Style>
+                                <Style TargetType="{x:Type Image}">
+                                    <Setter Property="Visibility" Value="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -58,32 +95,45 @@
                                    Foreground="#444444"
                                    Margin="0,0,0,3"/>
 
-                        <TextBlock Text="{Binding Content, TargetNullValue=''}"
+                        <TextBlock Text="{Binding DisplayContent}"
                                    Foreground="Black"
                                    TextWrapping="Wrap"
-                                   FontSize="14"
-                                   Visibility="{Binding Content, Converter={StaticResource NullToVisibilityConverter}}"/>
-
+                                   FontSize="14">
+                            <TextBlock.Style>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="FontStyle" Value="Italic"/>
+                                            <Setter Property="Foreground" Value="#666666"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                         <Image Source="{Binding Image}"
                                MaxWidth="250"
                                Margin="0,5,0,0"
-                               Stretch="Uniform"
-                               Visibility="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
-
-                        <TextBlock Text="{Binding DisplayContent}" 
-                                   FontStyle="Italic" 
-                                   Foreground="#666666"
-                                   Visibility="{Binding IsRecalled, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,5,0,0"/>
+                               Stretch="Uniform">
+                            <Image.Style>
+                                <Style TargetType="{x:Type Image}">
+                                    <Setter Property="Visibility" Value="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
                     </StackPanel>
                 </Border>
             </Grid>
         </DataTemplate>
 
         <local:ChatTemplateSelector x:Key="ChatTemplateSelector"
-                                     MyMessageTemplate="{StaticResource MyMessageTemplate}"
-                                     OtherMessageTemplate="{StaticResource OtherMessageTemplate}"/>
+                                    MyMessageTemplate="{StaticResource MyMessageTemplate}"
+                                    OtherMessageTemplate="{StaticResource OtherMessageTemplate}"/>
 
     </Window.Resources>
 
@@ -116,15 +166,14 @@
         </StackPanel>
 
         <ListBox x:Name="ChatListBox"
-                 Grid.Row="1"
                  Grid.Column="0"
-                 Margin="0,0,10,0"
+                 Margin="0,27,10,3"
                  ItemsSource="{Binding Messages}"
                  ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
                  Background="#F5F5F5"
                  BorderBrush="#CCCCCC"
                  BorderThickness="1"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" Grid.RowSpan="2">
 
             <ListBox.ItemContainerStyle>
                 <Style TargetType="{x:Type ListBoxItem}">
@@ -162,7 +211,6 @@
             <Button x:Name="SendButton" Content="Gửi tin nhắn" Click="SendButton_Click" Width="100" IsEnabled="False" Grid.Column="0"/>
             <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0" Grid.Column="1"/>
             <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="Gray" Grid.Column="2"/>
-            <Button x:Name="btnThuHoi" Content="Thu Hồi" Click="btnThuHoi_Click" Width="80" Grid.Column="3"/>
         </Grid>
     </Grid>
 </Window>

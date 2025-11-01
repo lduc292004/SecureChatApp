@@ -30,7 +30,15 @@ namespace SecureChatClientGUI
 
         public ChatClientService(string userName)
         {
-            _userName = userName;
+            if (string.Equals(userName, "Guest", StringComparison.OrdinalIgnoreCase))
+            {
+                // Thêm một hậu tố duy nhất để tránh trùng tên giữa các client mặc định
+                _userName = $"Guest_{Guid.NewGuid().ToString().Substring(0, 4)}";
+            }
+            else
+            {
+                _userName = userName;
+            }
         }
 
         private static bool ValidateServerCertificate(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors)
@@ -97,13 +105,17 @@ namespace SecureChatClientGUI
                     Sender = _userName,
                     IsMine = true
                 };
-
-                // Thêm tin nhắn của mình vào list hiển thị ngay lập tức
-
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     Messages.Add(chatMessage);
                 });
+
+                // Thêm tin nhắn của mình vào list hiển thị ngay lập tức
+
+                //Application.Current.Dispatcher.Invoke(() =>
+                //{
+                //    Messages.Add(chatMessage);
+                //});
                 string formattedMsg = $"[MSG]:{chatMessage.MessageId}|{_userName}|{message}\n";
 
                 byte[] data = Encoding.UTF8.GetBytes(formattedMsg);
@@ -224,6 +236,44 @@ namespace SecureChatClientGUI
                             Messages.Add(new ChatMessage { Content = receivedMessage, Sender = "SERVER", IsMine = false });
                         });
                     }
+                    else if (receivedMessage.StartsWith("[MSG_BROADCAST]:"))
+                    {
+                        // Format: [MSG_BROADCAST]:<MessageId>|<Sender>|<Content>
+                        string data = receivedMessage.Substring("[MSG_BROADCAST]:".Length);
+                        var parts = data.Split(new[] { '|' }, 3);
+
+                        if (parts.Length == 3)
+                        {
+                            string msgId = parts[0];
+                            string senderName = parts[1];
+                            string content = parts[2];
+
+                            // dung bien co ISMINE
+
+                          
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+
+                                var existingMessage = Messages.FirstOrDefault(m => m.MessageId == msgId);
+
+                                if (existingMessage != null)
+                                {
+                                    return;
+                                }
+                                Messages.Add(new ChatMessage
+                                {
+                                    MessageId = msgId,
+                                    Sender = senderName,
+                                    Content = content,
+                                    // Tin nhắn broadcast chưa tồn tại trong list LUÔN LÀ CỦA NGƯỜI KHÁC.
+                                    IsMine = false
+                                });
+
+
+                            });
+                        }
+                    }
                     else if (receivedMessage.StartsWith("[IMG_BROADCAST]:"))
                     {
                         // Xử lý ảnh (Cần kiểm tra lại logic nhận ảnh để khớp với format Server)
@@ -311,6 +361,7 @@ namespace SecureChatClientGUI
 
             Disconnect();
         }
+
 
         // -------------------- NGẮT KẾT NỐI và LOAD ẢNH (Giữ nguyên) --------------------
         public void Disconnect()

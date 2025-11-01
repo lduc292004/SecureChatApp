@@ -168,8 +168,8 @@ public class SecureChatServer
                 _messageHistory.TryAdd(msgId, record);
 
                 // 2. BROADCAST lại cho tất cả (format đơn giản: [Sender]: Content)
-                string broadcastMsg = $"[{sender.Name}]: {content}";
-                await BroadcastMessageAsync(broadcastMsg, sender); // Gửi cho tất cả (bao gồm người gửi)
+                string broadcastMsg = $"[MSG_BROADCAST]:{msgId}|{sender.Name}|{content}";
+                await BroadcastMessageAsync(broadcastMsg, null); // Gửi cho tất cả (bao gồm người gửi)
 
                 Console.WriteLine($"💬 Nhận tin: {sender.Name} (ID: {msgId}): {content}");
             }
@@ -304,7 +304,7 @@ public class SecureChatServer
         foreach (var client in _clients.Values)
         {
             // Bỏ qua người gửi (trừ khi sender là null, tức là broadcast cho tất cả)
-            if (client.Id == sender?.Id) continue;
+           
 
             try
             {

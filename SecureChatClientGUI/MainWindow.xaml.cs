@@ -1,85 +1,86 @@
-﻿// File: MainWindow.xaml.cs (Phiên bản đã tối ưu hóa)
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Controls;
-using System.Windows.Media.Imaging;
-using System;
-using System.Linq; // Cần thiết cho các thao tác LINQ trên Collections
+using System.Windows.Controls.Primitives; // Cần thêm cho ToggleButton
 
 namespace SecureChatClientGUI
 {
     public partial class MainWindow : Window
     {
-        // ⭐ 1. KHỞI TẠO CHAT SERVICE NGAY LẬP TỨC
-        // Bây giờ _chatService là DataContext, KHÔNG phải thuộc tính của MainWindow
-        private ChatClientService _chatService;
+        // Khởi tạo ChatClientService ở đây (Sẽ được gán giá trị khi nhấn Connect)
+        private ChatClientService? _chatService;
+
+        // BIẾN LƯU TRẠNG THÁI THEME
+        private bool _isDarkMode = false;
 
         public MainWindow()
         {
-            // TẠO SERVICE TRƯỚC HẾT
-            _chatService = new ChatClientService("UI_Test_User");
-
-            // ⭐ 2. GÁN DataContext TRƯỚC InitializeComponent()
-            this.DataContext = _chatService;
-
             InitializeComponent();
-
             this.Closing += MainWindow_Closing;
+            ChatListBox.Loaded += ChatListBox_Loaded;
 
-            // ⭐ 3. ĐĂNG KÝ SỰ KIỆN TỰ ĐỘNG CUỘN
-            // Messages đã được khởi tạo, đăng ký ngay lập tức.
-            _chatService.Messages.CollectionChanged += (s, args) =>
-            {
-                if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
-                {
-                    // Đảm bảo cuộn được gọi trên UI thread
-                    ScrollToBottom();
-                }
-            };
-
-            // ⭐ 4. NẠP DỮ LIỆU MẪU ĐỂ TEST GIAO DIỆN
-            LoadSampleMessages();
-
-            // Đăng ký StatusChanged (đã làm trong Connect, có thể lặp lại ở đây)
-            _chatService.StatusChanged += (status) => Dispatcher.Invoke(() => StatusTextBlock.Text = $"Trạng thái: {status}");
-
+            // Khởi tạo trạng thái điều khiển ban đầu
             UpdateControlStates();
         }
 
-        private void LoadSampleMessages()
+        // 
+        // ====================================================================
+        // HÀM MỚI: XỬ LÝ NÚT GẠT CHUYỂN DARK/LIGHT MODE
+        // ====================================================================
+        //
+        private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
         {
-            // Nạp dữ liệu vào Messages của Service (Đã là DataContext)
-            _chatService.Messages.Add(new ChatMessage { Content = "Chào bạn, mình test giao diện Chat Bubble mới nhé!", IsMine = true, Timestamp = DateTime.Now.AddMinutes(-5) });
-            _chatService.Messages.Add(new ChatMessage { Content = "Tuyệt vời! Giao diện này đẹp hơn hẳn đó.", IsMine = false, Sender = "Bạn A", Timestamp = DateTime.Now.AddMinutes(-3) });
-            _chatService.Messages.Add(new ChatMessage { Content = "Đây là tin nhắn của mình, nó sẽ căn phải.", IsMine = true, Timestamp = DateTime.Now.AddMinutes(-2) });
-            _chatService.Messages.Add(new ChatMessage { Content = "Và đây là tin nhắn của người khác, nó sẽ căn trái.", IsMine = false, Sender = "Bạn B", Timestamp = DateTime.Now.AddMinutes(-1) });
-            // Thêm tin nhắn thu hồi (để test logic IsRecalled)
-            _chatService.Messages.Add(new ChatMessage { Content = "Tin nhắn này bị thu hồi để kiểm tra UI.", IsMine = true, IsRecalled = true, Timestamp = DateTime.Now });
+            // Đảo ngược trạng thái
+            _isDarkMode = !_isDarkMode;
 
-            // ⭐ Nếu bạn có ảnh để test, thay thế placeholder này bằng code tải ảnh thực tế.
-            // Ví dụ: _chatService.Messages.Add(new ChatMessage { Image = new BitmapImage(new Uri("pack://application:,,,/Resources/sample.jpg")), IsMine = false });
+            // Gọi hàm static trong App.xaml.cs
+            App.SwitchTheme(_isDarkMode);
+
+            // Cập nhật trạng thái IsChecked của nút (nếu bạn muốn)
+            if (sender is ToggleButton toggleButton)
+            {
+                toggleButton.IsChecked = _isDarkMode;
+            }
         }
 
-        // ... (Giữ nguyên logic của các hàm khác, nhưng KHÔNG GÁN LẠI DataContext trong ConnectButton_Click) ...
+        // 
+        // ====================================================================
+        // CÁC HÀM CŨ CỦA BẠN (GIỮ NGUYÊN)
+        // ====================================================================
+        //
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            _chatService.Disconnect(); // Gọi Disconnect trên đối tượng đã khởi tạo
+            // Gọi Disconnect để đóng TcpClient và SslStream một cách sạch sẽ
+            _chatService?.Disconnect();
         }
 
         private async void ConnectButton_Click(object sender, RoutedEventArgs e)
         {
             string userName = UserNameTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(userName)) return;
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                MessageBox.Show("Vui lòng nhập tên của bạn.", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
-            // ⭐ KHÔNG CẦN TẠO MỚI _chatService nữa (vì đã tạo ở Constructor)
-            // Nếu bạn muốn đổi tên, chỉ cần gọi hàm Connect trên Service hiện tại
+            _chatService = new ChatClientService(userName);
+
+            // Đính kèm sự kiện cho các thông báo từ Service
+            _chatService.StatusChanged += (status) => Dispatcher.Invoke(() => StatusTextBlock.Text = $"Trạng thái: {status}");
+
+            // Xóa các tin nhắn cũ và danh sách online users khi kết nối mới
+            _chatService.Messages.Clear();
+            _chatService.OnlineUsers.Clear();
+
+            // Cập nhật DataContext
+            this.DataContext = _chatService;
 
             // Cố gắng kết nối
             bool connected = await _chatService.ConnectAsync();
-            UpdateControlStates();
+            UpdateControlStates(); // Cập nhật trạng thái nút
 
             if (connected)
             {
@@ -88,37 +89,40 @@ namespace SecureChatClientGUI
             }
         }
 
-        // Các hàm khác giữ nguyên: DisconnectButton_Click, SendButton_Click, MessageTextBox_KeyDown, SendFileButton_Click, ScrollToBottom, UpdateControlStates, OnlineUsersListBox_SelectionChanged, btnThuHoi_Click
-
         private void DisconnectButton_Click(object sender, RoutedEventArgs e)
         {
-            _chatService.Disconnect();
-            UpdateControlStates();
+            _chatService?.Disconnect();
+            UpdateControlStates(); // Cập nhật trạng thái nút
         }
 
         private async void SendButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!_chatService.IsConnected) return;
+            if (_chatService == null || !_chatService.IsConnected) return;
 
             string message = MessageTextBox.Text;
             if (string.IsNullOrWhiteSpace(message)) return;
 
+            // Service sẽ gửi tin nhắn và tự động thêm ChatMessage (IsMine=True) vào Collection
             await _chatService.SendMessageAsync(message);
             MessageTextBox.Clear();
+
+            // Cuộn xuống dòng cuối cùng sau khi gửi
+            ScrollToBottom();
         }
 
+        // Xử lý phim Enter để gửi tin nhắn
         private void MessageTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
                 SendButton_Click(sender, e);
-                e.Handled = true;
+                e.Handled = true; // Ngăn không cho sự kiện Enter thực hiện thêm hành động
             }
         }
 
         private async void SendFileButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!_chatService.IsConnected) return;
+            if (_chatService == null || !_chatService.IsConnected) return;
 
             OpenFileDialog openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|All files (*.*)|*.*";
@@ -127,9 +131,11 @@ namespace SecureChatClientGUI
             {
                 string filePath = openFileDialog.FileName;
                 await _chatService.SendImageAsync(filePath);
+                ScrollToBottom();
             }
         }
 
+        // Hàm cuộn xuống cuối cùng
         private void ScrollToBottom()
         {
             Dispatcher.Invoke(() =>
@@ -141,6 +147,25 @@ namespace SecureChatClientGUI
             });
         }
 
+        // Sự kiện tự động cuộn khi ListBox được tải
+        private void ChatListBox_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is ListBox listBox)
+            {
+                if (_chatService != null)
+                {
+                    _chatService.Messages.CollectionChanged += (s, args) =>
+                    {
+                        if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
+                        {
+                            ScrollToBottom();
+                        }
+                    };
+                }
+            }
+        }
+
+        // Cập nhật trạng thái các nút dựa trên kết nối
         private void UpdateControlStates()
         {
             bool isConnected = _chatService?.IsConnected ?? false;
@@ -164,37 +189,24 @@ namespace SecureChatClientGUI
             });
         }
 
-        private void OnlineUsersListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnlineUsersListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             // Thêm logic xử lý khi người dùng chọn một user trong danh sách
         }
 
-        private async void RecallMenuItem_Click(object sender, RoutedEventArgs e)
+        private async void btnThuHoi_Click(object sender, RoutedEventArgs e)
         {
-            if (!_chatService.IsConnected)
+            if (_chatService == null || !_chatService.IsConnected)
             {
                 MessageBox.Show("Chưa kết nối đến máy chủ.", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // Lấy messageId từ MenuItem.Tag (đã được setup trong XAML)
-            if (sender is MenuItem menuItem && menuItem.Tag is string messageId)
+            if (ChatListBox.SelectedItem is ChatMessage messageToRecall)
             {
-                // Tìm đối tượng ChatMessage tương ứng trong Messages
-                var messageToRecall = _chatService.Messages.FirstOrDefault(m => m.MessageId == messageId);
-
-                if (messageToRecall == null || !messageToRecall.IsMine)
+                if (!messageToRecall.IsMine)
                 {
                     MessageBox.Show("Bạn chỉ có thể thu hồi tin nhắn của chính mình.", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // ⭐ LOGIC KIỂM TRA THỜI GIAN THU HỒI (Giống Zalo/Messenger)
-                // Cho phép thu hồi trong vòng 10 phút (600 giây)
-                TimeSpan timeElapsed = DateTime.Now - messageToRecall.Timestamp;
-                if (timeElapsed.TotalSeconds > 600) // 600 giây = 10 phút
-                {
-                    MessageBox.Show("Đã quá thời gian cho phép thu hồi (10 phút).", "Lỗi Thu Hồi", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -204,10 +216,13 @@ namespace SecureChatClientGUI
                     return;
                 }
 
-                // Gửi yêu cầu thu hồi
                 await _chatService.SendRecallRequestAsync(messageToRecall.MessageId);
+                ChatListBox.SelectedItem = null;
+            }
+            else
+            {
+                MessageBox.Show("Vui lòng chọn một tin nhắn để thu hồi.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
-
     }
 }

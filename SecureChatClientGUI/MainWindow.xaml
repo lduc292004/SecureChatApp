@@ -5,51 +5,143 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SecureChatClientGUI"
         mc:Ignorable="d"
-        Title="Secure Chat Client" Height="500" Width="850"
-        Background="{DynamicResource PrimaryBackgroundColor}">
+        Title="Secure Chat Client" Height="500" Width="850">
 
     <Window.Resources>
+
         <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
 
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundColor}"/>
-            <Setter Property="Foreground" Value="{DynamicResource ButtonForegroundColor}"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="8,5"/>
-        </Style>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
-        <Style x:Key="ThemeToggleStyle" TargetType="ToggleButton">
-            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundColor}"/>
-            <Setter Property="Foreground" Value="{DynamicResource ButtonForegroundColor}"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="5"/>
-            <Setter Property="FontFamily" Value="Segoe UI Emoji"/>
-            <Setter Property="Content" Value="🌙"/>
-            <Style.Triggers>
-                <Trigger Property="IsChecked" Value="True">
-                    <Setter Property="Content" Value="☀️"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
+        <DataTemplate x:Key="MyMessageTemplate">
+            <Grid HorizontalAlignment="Right" Margin="5, 2, 5, 2">
+                <Border Background="#1E90FF" 
+                        CornerRadius="14" 
+                        Padding="10" 
+                        MaxWidth="400"
+                        Margin="40, 0, 0, 0">
 
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{DynamicResource InputBackgroundColor}"/>
-            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextColor}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource PrimaryTextColor}"/>
-        </Style>
+                    <Border.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Thu hồi" 
+                                      Click="RecallMenuItem_Click" 
+                                      Tag="{Binding MessageId}">
+                                <MenuItem.Style>
+                                    <Style TargetType="{x:Type MenuItem}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsMine}" Value="True"/>
+                                                    <Condition Binding="{Binding IsRecalled}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </MenuItem.Style>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Border.ContextMenu>
+                    <StackPanel>
 
-        <Style TargetType="ListBox">
-            <Setter Property="Background" Value="{DynamicResource SecondaryBackgroundColor}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
-            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextColor}"/>
-        </Style>
+                        <TextBlock Text="{Binding DisplayContent}"
+                                   Foreground="White"
+                                   TextWrapping="Wrap"
+                                   FontSize="14">
+                            <TextBlock.Style>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="FontStyle" Value="Italic"/>
+                                            <Setter Property="Foreground" Value="LightGray"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Image Source="{Binding Image}"
+                               MaxWidth="250"
+                               Margin="0,5,0,0"
+                               Stretch="Uniform">
+                            <Image.Style>
+                                <Style TargetType="{x:Type Image}">
+                                    <Setter Property="Visibility" Value="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="OtherMessageTemplate">
+            <Grid HorizontalAlignment="Left" Margin="5, 2, 5, 2">
+
+                <Border Background="#EAEAEA" 
+                        CornerRadius="14" 
+                        Padding="10" 
+                        MaxWidth="400"
+                        Margin="0, 0, 40, 0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Sender, StringFormat='\{0\}:'}"
+                                   FontWeight="Bold"
+                                   Foreground="#444444"
+                                   Margin="0,0,0,3"/>
+
+                        <TextBlock Text="{Binding DisplayContent}"
+                                   Foreground="Black"
+                                   TextWrapping="Wrap"
+                                   FontSize="14">
+                            <TextBlock.Style>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="FontStyle" Value="Italic"/>
+                                            <Setter Property="Foreground" Value="#666666"/>
+                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Image Source="{Binding Image}"
+                               MaxWidth="250"
+                               Margin="0,5,0,0"
+                               Stretch="Uniform">
+                            <Image.Style>
+                                <Style TargetType="{x:Type Image}">
+                                    <Setter Property="Visibility" Value="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <local:ChatTemplateSelector x:Key="ChatTemplateSelector"
+                                    MyMessageTemplate="{StaticResource MyMessageTemplate}"
+                                    OtherMessageTemplate="{StaticResource OtherMessageTemplate}"/>
+
     </Window.Resources>
 
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -59,115 +151,66 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,10">
-            <TextBlock Text="Tên của bạn:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="{DynamicResource PrimaryTextColor}"/>
-            <TextBox x:Name="UserNameTextBox" Width="140" Text="CHARGE YOUR NAME " Margin="0,0,5,0"/>
+            <TextBlock Text="Tên của bạn:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <TextBox x:Name="UserNameTextBox" Width="150" Text="Guest" Margin="0,0,10,0"/>
             <Button x:Name="ConnectButton" Content="Kết nối" Click="ConnectButton_Click" Margin="0,0,5,0"/>
-            <Button x:Name="DisconnectButton" Content="Ngắt kết nối" Click="DisconnectButton_Click" IsEnabled="False" Margin="0,0,10,0"/>
-
-            <ToggleButton x:Name="ThemeToggleButton" 
-                          Style="{StaticResource ThemeToggleStyle}"
-                          Click="ThemeToggleButton_Click"
-                          VerticalAlignment="Center"/>
+            <Button x:Name="DisconnectButton" Content="Ngắt kết nối" Click="DisconnectButton_Click" IsEnabled="False"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="3">
-            <TextBlock Text="Người dùng trực tuyến:" FontWeight="Bold" Margin="0,0,0,5" Foreground="{DynamicResource PrimaryTextColor}"/>
-            <ListBox x:Name="OnlineUsersListBox" ItemsSource="{Binding OnlineUsers}" Height="300"/>
+        <StackPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="4">
+            <TextBlock Text="Người dùng trực tuyến:" FontWeight="Bold" Margin="0,0,0,5"/>
+            <ListBox x:Name="OnlineUsersListBox" 
+                     ItemsSource="{Binding OnlineUsers}" 
+                     Height="380"
+                     SelectionChanged="OnlineUsersListBox_SelectionChanged"/>
         </StackPanel>
 
         <ListBox x:Name="ChatListBox"
-                 Grid.Row="1"
                  Grid.Column="0"
-                 Margin="0,0,10,0"
+                 Margin="0,27,10,3"
                  ItemsSource="{Binding Messages}"
+                 ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
+                 Background="#F5F5F5"
+                 BorderBrush="#CCCCCC"
                  BorderThickness="1"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 HorizontalContentAlignment="Stretch"
-                 BorderBrush="{DynamicResource BorderColor}"
-                 Background="{DynamicResource SecondaryBackgroundColor}">
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" Grid.RowSpan="2">
 
             <ListBox.ItemContainerStyle>
                 <Style TargetType="{x:Type ListBoxItem}">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                     <Setter Property="Padding" Value="0"/>
-                    <Setter Property="Margin" Value="2"/>
-                    <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                <ContentPresenter />
+                                <ContentPresenter/>
                             </ControlTemplate>
                         </Setter.Value>
                     </Setter>
                 </Style>
             </ListBox.ItemContainerStyle>
-
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <Grid MaxWidth="420" Margin="5">
-                        <Border x:Name="MessageBubble"
-                                Padding="10"
-                                CornerRadius="10">
-
-                            <StackPanel>
-                                <TextBlock x:Name="SenderNameText"
-                                           Text="{Binding Sender}"
-                                           FontWeight="Bold"
-                                           Foreground="{DynamicResource SecondaryTextColor}"
-                                           Visibility="Collapsed" 
-                                           Margin="0,0,0,4"/>
-
-                                <TextBlock x:Name="ContentText"
-                                           Text="{Binding DisplayContent, TargetNullValue=''}"
-                                           TextWrapping="Wrap"
-                                           Foreground="{DynamicResource PrimaryTextColor}"
-                                           FontSize="14"
-                                           Visibility="{Binding Content, Converter={StaticResource NullToVisibilityConverter}}"/>
-
-                                <Image Source="{Binding Image}"
-                                       MaxWidth="250"
-                                       Margin="0,5,0,0"
-                                       Stretch="Uniform"
-                                       Visibility="{Binding Image, Converter={StaticResource NullToVisibilityConverter}}"/>
-
-                                <TextBlock x:Name="TimestampText"
-                                           Text="{Binding Timestamp, StringFormat='HH:mm'}"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource SecondaryTextColor}"
-                                           HorizontalAlignment="Right"
-                                           Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-
-                    <DataTemplate.Triggers>
-                        <DataTrigger Binding="{Binding IsMine}" Value="True">
-                            <Setter TargetName="MessageBubble" Property="HorizontalAlignment" Value="Right"/>
-                            <Setter TargetName="MessageBubble" Property="Background" Value="{DynamicResource MyBubbleColor}"/>
-                        </DataTrigger>
-
-                        <DataTrigger Binding="{Binding IsMine}" Value="False">
-                            <Setter TargetName="MessageBubble" Property="HorizontalAlignment" Value="Left"/>
-                            <Setter TargetName="MessageBubble" Property="Background" Value="{DynamicResource OtherBubbleColor}"/>
-                            <Setter TargetName="SenderNameText" Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-
-                        <DataTrigger Binding="{Binding IsRecalled}" Value="True">
-                            <Setter TargetName="ContentText" Property="FontStyle" Value="Italic"/>
-                            <Setter TargetName="ContentText" Property="Foreground" Value="{DynamicResource RecalledTextColor}"/>
-                        </DataTrigger>
-                    </DataTemplate.Triggers>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
         </ListBox>
 
-        <TextBox x:Name="MessageTextBox" Grid.Row="2" Grid.Column="0" Margin="0,10,10,0" KeyDown="MessageTextBox_KeyDown"/>
+        <Grid Grid.Row="2" Grid.Column="0" Height="10"/>
 
-        <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,10,0,0">
-            <Button x:Name="SendButton" Content="Gửi tin nhắn" Click="SendButton_Click" Width="100" IsEnabled="False"/>
-            <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0"/>
-            <Button x:Name="btnThuHoi" Content="Thu Hồi" Click="btnThuHoi_Click" Width="70" Margin="10,0,0,0"/>
-            <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="{DynamicResource SecondaryTextColor}"/>
-        </StackPanel>
+        <TextBox x:Name="MessageTextBox" 
+                 Grid.Row="3" 
+                 Grid.Column="0" 
+                 Margin="0,0,10,0" 
+                 KeyDown="MessageTextBox_KeyDown"/>
+
+        <Grid Grid.Row="4" Grid.Column="0" Margin="0,10,10,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="SendButton" Content="Gửi tin nhắn" Click="SendButton_Click" Width="100" IsEnabled="False" Grid.Column="0"/>
+            <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0" Grid.Column="1"/>
+            <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="Gray" Grid.Column="2"/>
+        </Grid>
     </Grid>
 </Window>

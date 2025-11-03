@@ -166,6 +166,7 @@
         <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,10,0,0">
             <Button x:Name="SendButton" Content="Gửi tin nhắn" Click="SendButton_Click" Width="100" IsEnabled="False"/>
             <Button x:Name="SendFileButton" Content="Gửi ảnh" Click="SendFileButton_Click" Width="90" IsEnabled="False" Margin="10,0,0,0"/>
+                <Button x:Name="CreateGroupButton" Content="Tạo nhóm" Click="CreateGroupButton_Click" Width="80" IsEnabled="False" Margin="10,0,0,0"/>
             <Button x:Name="btnThuHoi" Content="Thu Hồi" Click="btnThuHoi_Click" Width="70" Margin="10,0,0,0"/>
             <TextBlock x:Name="StatusTextBlock" Text="Trạng thái: Đã ngắt kết nối" VerticalAlignment="Center" Margin="20,0,0,0" Foreground="{DynamicResource SecondaryTextColor}"/>
         </StackPanel>

@@ -20,6 +20,12 @@ namespace SecureChatClientGUI
 
         public string MessageId { get; set; } = Guid.NewGuid().ToString("N");
         public string Sender { get; set; } = string.Empty;
+    // Nếu đây là tin nhắn nhóm, GroupId sẽ khác null/empty
+    public string? GroupId { get; set; }
+    // Tùy chọn: tên nhóm (dùng hiển thị)
+    public string? GroupName { get; set; }
+    // Cờ đánh dấu đây có phải là tin nhắn nhóm hay không
+    public bool IsGroupMessage { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.Now;
         public bool IsMine { get; set; }
 

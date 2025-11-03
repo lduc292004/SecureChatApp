@@ -14,7 +14,7 @@ using Serilog;
 public class SecureChatServer
 {
     private const int Port = 5000;
-    private const string CertPath = "securechat.pfx";
+    private const string CertPath = "D:\\securechat.pfx";
     private const string CertPassword = "password123";
     private const string UploadDir = "ServerUploads";
 
@@ -22,6 +22,8 @@ public class SecureChatServer
 
     //Them luu tru tin nhhat
     private static readonly ConcurrentDictionary<string, ChatMessageRecord> _messageHistory = new();
+    // Lưu trữ nhóm: GroupId -> GroupRecord
+    private static readonly ConcurrentDictionary<string, GroupRecord> _groups = new();
     public static async Task StartServer()
     {
         Log.Logger = new LoggerConfiguration()
@@ -111,6 +113,10 @@ public class SecureChatServer
                 {
                     await HandleSetName(clientConn, msg);
                 }
+                else if (msg.StartsWith("[CREATE_GROUP]:"))
+                {
+                    await HandleCreateGroupAsync(clientConn, msg);
+                }
                 else if (msg.StartsWith("[IMG_START]:"))
                 {
                     await HandleIncomingImage(clientConn, msg);
@@ -141,6 +147,79 @@ public class SecureChatServer
                 Log.Error(ex, "❌ Lỗi khi nhận dữ liệu từ {Name}", clientConn.Name);
                 break;
             }
+        }
+    }
+    
+    private static async Task HandleCreateGroupAsync(ClientConnection requester, string message)
+    {
+        // Format: [CREATE_GROUP]:<GroupName>|member1,member2,member3
+        try
+        {
+            string data = message.Substring("[CREATE_GROUP]:".Length);
+            var parts = data.Split(new[] { '|' }, 2);
+            if (parts.Length == 0) return;
+
+            string groupName = parts[0].Trim();
+            string memberCsv = parts.Length == 2 ? parts[1].Trim() : string.Empty;
+            var memberNames = memberCsv.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            // Tạo ID nhóm mới
+            string groupId = Guid.NewGuid().ToString("N");
+
+            // Tìm clients tương ứng với tên thành viên
+            var memberIds = new List<string>();
+            var memberConnections = new List<ClientConnection>();
+
+            foreach (var name in memberNames)
+            {
+                var conn = _clients.Values.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (conn != null)
+                {
+                    memberIds.Add(conn.Id);
+                    memberConnections.Add(conn);
+                }
+            }
+
+            // Thêm requester nếu không có trong danh sách
+            if (!memberIds.Contains(requester.Id))
+            {
+                memberIds.Add(requester.Id);
+                memberConnections.Add(requester);
+            }
+
+            var group = new GroupRecord
+            {
+                GroupId = groupId,
+                GroupName = groupName,
+                MemberIds = new HashSet<string>(memberIds),
+                MemberNames = memberNames.ToList()
+            };
+
+            _groups.TryAdd(groupId, group);
+
+            // Thông báo tới các thành viên đã tìm thấy
+            string notifyCsv = string.Join(',', group.MemberNames);
+            string notifyMsg = $"[GROUP_CREATED]:{groupId}|{groupName}|{notifyCsv}\n";
+
+            foreach (var conn in memberConnections)
+            {
+                try
+                {
+                    byte[] bytes = Encoding.UTF8.GetBytes(notifyMsg);
+                    await conn.Stream!.WriteAsync(bytes, 0, bytes.Length);
+                    await conn.Stream.FlushAsync();
+                }
+                catch
+                {
+                    // bỏ qua lỗi gửi
+                }
+            }
+
+            Console.WriteLine($"📁 Nhóm '{groupName}' ({groupId}) được tạo bởi {requester.Name} với {memberConnections.Count} thành viên.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "❌ Lỗi tạo nhóm từ {Name}", requester.Name);
         }
     }
     private static async Task HandleChatMessageAsync(ClientConnection sender, string message)
@@ -337,10 +416,19 @@ public class SecureChatServer
 public class ChatMessageRecord
 {
     public string MessageId { get; set; } = Guid.NewGuid().ToString();
-    public string SenderId { get; set; } // ID duy nhất của người gửi
-    public string SenderName { get; set; }
-    public string Content { get; set; }
+    public string SenderId { get; set; } = string.Empty; // ID duy nhất của người gửi
+    public string SenderName { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; } = DateTime.Now;
+}
+
+// Lưu trữ thông tin nhóm
+public class GroupRecord
+{
+    public string GroupId { get; set; } = Guid.NewGuid().ToString("N");
+    public string GroupName { get; set; } = string.Empty;
+    public HashSet<string> MemberIds { get; set; } = new();
+    public List<string> MemberNames { get; set; } = new();
 }
 
 public class ClientConnection

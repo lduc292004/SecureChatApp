@@ -175,6 +175,7 @@ namespace SecureChatClientGUI
                 ConnectButton.IsEnabled = !isConnected;
                 DisconnectButton.IsEnabled = isConnected;
                 SendButton.IsEnabled = isConnected;
+                CreateGroupButton.IsEnabled = isConnected;
                 SendFileButton.IsEnabled = isConnected;
                 UserNameTextBox.IsEnabled = !isConnected;
 
@@ -187,6 +188,25 @@ namespace SecureChatClientGUI
                     StatusTextBlock.Text = "Trạng thái: Đã ngắt kết nối";
                 }
             });
+        }
+
+        private async void CreateGroupButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_chatService == null || !_chatService.IsConnected)
+            {
+                MessageBox.Show("Chưa kết nối đến máy chủ.", "Lỗi Tạo Nhóm", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dlg = new CreateGroupWindow();
+            if (dlg.ShowDialog() == true)
+            {
+                string groupName = dlg.GroupName?.Trim() ?? string.Empty;
+                string membersCsv = dlg.MembersCsv?.Trim() ?? string.Empty;
+                var members = membersCsv.Split(new[] { ',' }, System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+
+                await _chatService.SendCreateGroupAsync(groupName, members);
+            }
         }
 
         private void OnlineUsersListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

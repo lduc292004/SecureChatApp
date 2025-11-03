@@ -199,6 +199,28 @@ namespace SecureChatClientGUI
             }
         }
 
+        // -------------------- TẠO NHÓM --------------------
+        public async Task SendCreateGroupAsync(string groupName, IEnumerable<string> members)
+        {
+            if (!IsConnected || _sslStream == null) return;
+
+            try
+            {
+                // Format: [CREATE_GROUP]:<GroupName>|member1,member2,member3\n
+                string memberList = string.Join(',', members.Select(m => m.Trim()).Where(m => !string.IsNullOrEmpty(m)));
+                string cmd = $"[CREATE_GROUP]:{groupName}|{memberList}\n";
+                byte[] data = Encoding.UTF8.GetBytes(cmd);
+                await _sslStream.WriteAsync(data, 0, data.Length);
+                await _sslStream.FlushAsync();
+
+                StatusChanged?.Invoke($"📁 Đã gửi yêu cầu tạo nhóm '{groupName}'");
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke($"❌ Lỗi tạo nhóm: {ex.Message}");
+            }
+        }
+
         // -------------------- NHẬN DỮ LIỆU (Giữ nguyên logic phân tích tin nhắn đã sửa) --------------------
         private async Task ReceiveLoop()
         {
@@ -322,6 +344,31 @@ namespace SecureChatClientGUI
                                 });
                             });
                             StatusChanged?.Invoke($"📥 Nhận ảnh: {fileName} ({size} bytes)");
+                        }
+                    }
+                    else if (receivedMessage.StartsWith("[GROUP_CREATED]:"))
+                    {
+                        // Format: [GROUP_CREATED]:<GroupId>|<GroupName>|member1,member2
+                        string data = receivedMessage.Substring("[GROUP_CREATED]:".Length);
+                        var parts = data.Split(new[] { '|' }, 3);
+                        if (parts.Length >= 2)
+                        {
+                            string groupId = parts[0];
+                            string groupName = parts[1];
+                            string members = parts.Length == 3 ? parts[2] : string.Empty;
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                Messages.Add(new ChatMessage
+                                {
+                                    Sender = "SERVER",
+                                    Content = $"Nhóm '{groupName}' đã được tạo. Thành viên: {members}",
+                                    IsMine = false,
+                                    IsGroupMessage = true,
+                                    GroupId = groupId,
+                                    GroupName = groupName
+                                });
+                            });
                         }
                     }
                     else
